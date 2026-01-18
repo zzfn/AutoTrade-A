@@ -128,11 +128,38 @@ class TradeManager:
 
             df = adapter.load_data(symbols, start_date, end_date)
 
-            if df.empty:
-                # 如果没有本地数据，尝试获取
-                self.log("本地无数据，正在从 AKShare 获取...")
-                adapter.fetch_and_store(symbols, start_date, end_date)
-                df = adapter.load_data(symbols, start_date, end_date)
+            df = adapter.load_data(symbols, start_date, end_date)
+
+            should_fetch = df.empty
+            
+            # 检查数据是否过旧
+            if not df.empty:
+                try:
+                    latest_date = df.index.get_level_values(0).max().date()
+                    today = datetime.now().date()
+                    # 如果最新数据不是今天，且距离上次检查超过 1 小时（避免频繁请求），尝试同步
+                    if latest_date < today:
+                        last_check = self.state.get("_last_data_check")
+                        # 检查间隔：3600秒 (1小时)
+                        if not last_check or (datetime.now() - datetime.fromisoformat(last_check)).total_seconds() > 3600:
+                            should_fetch = True
+                            self.log(f"数据滞后 (最新: {latest_date})，尝试同步...")
+                except Exception as e:
+                    self.log(f"检查数据时效性失败: {e}")
+
+            if should_fetch:
+                try:
+                    # 获取数据 (append 模式支持增量更新)
+                    if df.empty:
+                        self.log("本地无数据，正在从 AKShare 获取...")
+                    
+                    adapter.fetch_and_store(symbols, start_date, end_date, update_mode="append")
+                    df = adapter.load_data(symbols, start_date, end_date)
+                    
+                    # 更新检查时间
+                    self.state["_last_data_check"] = datetime.now().isoformat()
+                except Exception as e:
+                    self.log(f"数据同步失败: {e}")
 
             if df.empty:
                 return {

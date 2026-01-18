@@ -13,6 +13,8 @@ import akshare as ak
 import pandas as pd
 from loguru import logger
 
+from autotrade.research.data.cache import ParquetCache
+
 
 class BaseDataProvider(ABC):
     """数据提供者基类"""
@@ -66,15 +68,16 @@ class AKShareDataProvider(BaseDataProvider):
         "star": 0.20,  # 科创板(688xxx) ±20%
     }
 
-    def __init__(self, adjust: str = "qfq"):
+    def __init__(self, adjust: str = "qfq", cache_dir: str = "data/cache/akshare"):
         """
         初始化 AKShare 数据提供者
 
         Args:
             adjust: 复权类型 - "qfq" 前复权, "hfq" 后复权, "" 不复权
+            cache_dir: 缓存目录路径
         """
         self.adjust = adjust
-        self._cache: dict[str, pd.DataFrame] = {}
+        self.cache_manager = ParquetCache(cache_dir)
         self._stock_info_cache: Optional[pd.DataFrame] = None
 
     def is_available(self) -> bool:
@@ -131,80 +134,117 @@ class AKShareDataProvider(BaseDataProvider):
         start_date: datetime,
         end_date: datetime,
         interval: str = "1d",
+        force_update: bool = False,
     ) -> pd.DataFrame:
         """
-        获取 A 股历史数据
+        获取 A 股历史数据（带持久化缓存）
 
         Args:
-            symbols: A 股代码列表，如 ["000001.SZ", "600000.SH"]
+            symbols: A 股代码列表
             start_date: 开始日期
             end_date: 结束日期
-            interval: "1d"（仅支持日线）
+            interval: "1d"
+            force_update: 是否强制从网络获取
 
         Returns:
             DataFrame with MultiIndex (timestamp, symbol)
-            Columns: open, high, low, close, volume
         """
         if interval != "1d":
             logger.warning(f"A 股数据仅支持日线，忽略 interval={interval}")
 
-        logger.info(f"从 AKShare 获取 A 股数据: {symbols}, {start_date} - {end_date}")
-
         all_data = []
-        start_str = start_date.strftime("%Y%m%d")
-        end_str = end_date.strftime("%Y%m%d")
 
         for symbol in symbols:
             try:
-                # 验证代码格式
-                code, _ = self._validate_symbol(symbol)
+                # 1. 检查缓存
+                cached_df = None
+                if not force_update:
+                    cached_df = self.cache_manager.load(symbol)
 
-                # 调用 AKShare 获取数据
-                df = ak.stock_zh_a_hist(
-                    symbol=code,
-                    period="daily",
-                    start_date=start_str,
-                    end_date=end_str,
-                    adjust=self.adjust,
-                )
+                # 2. 判断是否需要网络获取
+                needs_fetch = True
+                if cached_df is not None and not cached_df.empty:
+                    # 确保 timestamp 为 datetime 类型并移除时区信息
+                    cached_df["timestamp"] = pd.to_datetime(cached_df["timestamp"]).dt.tz_localize(None)
+                    
+                    # 检查缓存是否覆盖了请求的范围
+                    cache_min = cached_df["timestamp"].min()
+                    cache_max = cached_df["timestamp"].max()
+                    
+                    # 比较请求范围
+                    req_start = pd.to_datetime(start_date).tz_localize(None)
+                    req_end = pd.to_datetime(end_date).tz_localize(None)
 
-                if df.empty:
-                    logger.warning(f"{symbol} 无数据")
-                    continue
+                    if cache_min <= req_start and cache_max >= req_end:
+                        now = datetime.now()
+                        is_today = req_end.date() == now.date()
+                        if not is_today or now.hour >= 16:
+                            needs_fetch = False
+                            logger.debug(f"{symbol} 缓存命中: {start_date.date()} - {end_date.date()}")
+                        else:
+                            logger.debug(f"{symbol} 包含今日且非收盘后，刷新今日数据")
+                    else:
+                        logger.debug(f"{symbol} 缓存范围不全: {cache_min.date()}~{cache_max.date()}")
 
-                # 转换列名为标准格式
-                df = df.rename(
-                    columns={
-                        "日期": "timestamp",
-                        "开盘": "open",
-                        "最高": "high",
-                        "最低": "low",
-                        "收盘": "close",
-                        "成交量": "volume",
-                    }
-                )
+                # 3. 执行网络获取
+                if needs_fetch:
+                    code, _ = self._validate_symbol(symbol)
+                    start_str = start_date.strftime("%Y%m%d")
+                    end_str = end_date.strftime("%Y%m%d")
+                    
+                    df = ak.stock_zh_a_hist(
+                        symbol=code,
+                        period="daily",
+                        start_date=start_str,
+                        end_date=end_str,
+                        adjust=self.adjust,
+                    )
 
-                # 只保留需要的列
-                df = df[["timestamp", "open", "high", "low", "close", "volume"]]
-                df["symbol"] = symbol.upper()
-                df["timestamp"] = pd.to_datetime(df["timestamp"])
+                    if not df.empty:
+                        df = df.rename(
+                            columns={
+                                "日期": "timestamp",
+                                "开盘": "open",
+                                "最高": "high",
+                                "最低": "low",
+                                "收盘": "close",
+                                "成交量": "volume",
+                            }
+                        )
+                        df = df[["timestamp", "open", "high", "low", "close", "volume"]]
+                        df["timestamp"] = pd.to_datetime(df["timestamp"]).dt.tz_localize(None)
+                        
+                        # 保存到持久化缓存
+                        self.cache_manager.save(symbol, df)
+                        
+                        # 重新加载完整数据
+                        cached_df = self.cache_manager.load(symbol)
+                        if cached_df is not None:
+                            cached_df["timestamp"] = pd.to_datetime(cached_df["timestamp"]).dt.tz_localize(None)
+                    else:
+                        logger.warning(f"{symbol} AKShare 返回空数据")
 
-                all_data.append(df)
-                logger.debug(f"获取 {symbol} 数据: {len(df)} 条记录")
+                # 4. 截取范围内的数据
+                if cached_df is not None and not cached_df.empty:
+                    req_start = pd.to_datetime(start_date).tz_localize(None)
+                    req_end = pd.to_datetime(end_date).tz_localize(None)
+                    
+                    mask = (cached_df["timestamp"] >= req_start) & (cached_df["timestamp"] <= req_end)
+                    symbol_df = cached_df[mask].copy()
+                    if not symbol_df.empty:
+                        symbol_df["symbol"] = symbol.upper()
+                        all_data.append(symbol_df)
 
             except Exception as e:
-                logger.error(f"获取 {symbol} 数据失败: {e}")
+                logger.error(f"处理 {symbol} 数据失败: {e}")
 
         if not all_data:
-            logger.warning("AKShare 返回空数据")
             return pd.DataFrame()
 
-        # 合并所有数据
         result = pd.concat(all_data, ignore_index=True)
         result = result.set_index(["timestamp", "symbol"])
         result = result.sort_index()
 
-        logger.info(f"从 AKShare 获取了 {len(result)} 条记录")
         return result
 
     def get_stock_names(self, symbols: list[str]) -> dict[str, str]:
@@ -282,22 +322,14 @@ class AKShareDataProvider(BaseDataProvider):
             True 如果停牌（当天无成交数据或成交量为0）
         """
         try:
-            code, _ = self._validate_symbol(symbol)
-            date_str = date.strftime("%Y%m%d")
-
-            # 获取当天数据
-            df = ak.stock_zh_a_hist(
-                symbol=code,
-                period="daily",
-                start_date=date_str,
-                end_date=date_str,
-                adjust=self.adjust,
-            )
+            # 使用 fetch_data 自动利用缓存
+            df = self.fetch_data([symbol], date, date)
 
             if df.empty:
                 return True  # 无数据视为停牌
 
-            volume = df.iloc[0].get("成交量", 0)
+            # index 是 (timestamp, symbol)，列有 volume
+            volume = df.iloc[0].get("volume", 0)
             return volume == 0
 
         except Exception as e:
@@ -347,42 +379,46 @@ class AKShareDataProvider(BaseDataProvider):
             True 如果达到涨跌停
         """
         try:
-            code, _ = self._validate_symbol(symbol)
             board = self._get_board_type(symbol)
             limit_pct = self.LIMIT_PCTS[board]
 
-            date_str = date.strftime("%Y%m%d")
-            prev_date = (date - timedelta(days=10)).strftime("%Y%m%d")
-
             # 获取近期数据以计算涨跌幅
-            df = ak.stock_zh_a_hist(
-                symbol=code,
-                period="daily",
-                start_date=prev_date,
-                end_date=date_str,
-                adjust=self.adjust,
+            # 为了确保有前一交易日数据，我们向前多取几天
+            df = self.fetch_data(
+                [symbol], 
+                date - timedelta(days=10), 
+                date
             )
 
             if len(df) < 2:
                 return False
 
-            # 获取当日和前一日数据
-            df["日期"] = pd.to_datetime(df["日期"])
-            df = df.sort_values("日期")
-            today = df[df["日期"] == pd.to_datetime(date)]
-            if today.empty:
+            # 重置索引以便操作
+            df = df.reset_index()
+            df = df.sort_values("timestamp")
+            
+            # 找到 date 对应的位置
+            # 使用 .dt.date 进行比较以避免时区/具体时间影响
+            target_date = date.date()
+            df_dates = df["timestamp"].dt.date
+            today_mask = (df_dates == target_date)
+            
+            if not today_mask.any():
+                return False
+            
+            idx = df[today_mask].index[0]
+            # 获取在排序后 df 中的位置
+            loc = df.index.get_loc(idx)
+            
+            if loc == 0:
                 return False
 
-            idx = df[df["日期"] == pd.to_datetime(date)].index[0]
-            if idx == 0:
-                return False
+            prev_close = df.iloc[loc - 1]["close"]
+            today_data = df.iloc[loc]
 
-            prev_close = df.loc[idx - 1, "收盘"]
-            today_data = df.loc[idx]
-
-            close = today_data["收盘"]
-            high = today_data["最高"]
-            low = today_data["最低"]
+            close = today_data["close"]
+            high = today_data["high"]
+            low = today_data["low"]
 
             # 计算涨跌幅
             change_pct = (close - prev_close) / prev_close
