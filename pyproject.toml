@@ -14,6 +14,8 @@ dependencies = [
     "pandas>=2.3.3",             # 数据分析库
     "pyarrow>=22.0.0",           # 列式存储格式
     "scipy>=1.17.0",             # 科学计算库
+    "statsmodels>=0.14.0",       # 统计模型 (PyQlib 依赖)
+    "scikit-learn>=1.8.0",       # 机器学习工具库 (PyQlib 依赖)
     # 可视化与Web界面
     "websockets>=12.0",          # WebSocket 通信
     "fastapi>=0.115.0",          # Web UI 框架
