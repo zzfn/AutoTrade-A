@@ -207,6 +207,38 @@ class AKShareDataProvider(BaseDataProvider):
         logger.info(f"从 AKShare 获取了 {len(result)} 条记录")
         return result
 
+    def get_stock_names(self, symbols: list[str]) -> dict[str, str]:
+        """
+        获取股票名称映射
+
+        Args:
+            symbols: 股票代码列表 (带后缀，如 000001.SZ)
+
+        Returns:
+            {symbol: name} 映射字典
+        """
+        try:
+            if self._stock_info_cache is None:
+                self._stock_info_cache = ak.stock_zh_a_spot_em()
+
+            mapping = {}
+            for symbol in symbols:
+                try:
+                    code, _ = self._validate_symbol(symbol)
+                    stock_info = self._stock_info_cache[
+                        self._stock_info_cache["代码"] == code
+                    ]
+                    if not stock_info.empty:
+                        mapping[symbol] = stock_info.iloc[0]["名称"]
+                    else:
+                        mapping[symbol] = symbol
+                except Exception:
+                    mapping[symbol] = symbol
+            return mapping
+        except Exception as e:
+            logger.warning(f"获取股票名称失败: {e}")
+            return {s: s for s in symbols}
+
     def is_st_stock(self, symbol: str) -> bool:
         """
         检查是否 ST 股票
@@ -379,6 +411,7 @@ class DataProviderFactory:
 
     AutoTrade-A 仅支持 A 股市场，默认返回 AKShareDataProvider
     """
+    _providers = {}
 
     @staticmethod
     def get_provider(market: str = "cn") -> BaseDataProvider:
@@ -396,11 +429,13 @@ class DataProviderFactory:
         """
         market = market.lower()
 
-        if market == "cn":
-            logger.info("使用 AKShare 作为 A 股数据源")
-            return AKShareDataProvider()
+        if market not in DataProviderFactory._providers:
+            if market == "cn":
+                logger.debug("初始化 AKShare 数据源")
+                DataProviderFactory._providers[market] = AKShareDataProvider()
+            else:
+                raise ValueError(
+                    f"AutoTrade-A 仅支持 A 股市场 (cn)，不支持: {market}"
+                )
 
-        else:
-            raise ValueError(
-                f"AutoTrade-A 仅支持 A 股市场 (cn)，不支持: {market}"
-            )
+        return DataProviderFactory._providers[market]

@@ -173,6 +173,9 @@ class TradeManager:
             with open(model_path, "rb") as f:
                 model = pickle.load(f)
 
+            # 获取股票名称映射
+            stock_names = adapter.provider.get_stock_names(symbols)
+
             # 获取每只股票最新的特征
             predictions = []
             latest_date = features.index.get_level_values(0).max()
@@ -195,6 +198,7 @@ class TradeManager:
 
                         predictions.append({
                             "symbol": symbol,
+                            "name": stock_names.get(symbol, symbol),
                             "signal": signal,
                             "score": float(pred_score),
                             "confidence": abs(float(pred_score)) * 100,

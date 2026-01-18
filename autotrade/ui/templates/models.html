@@ -92,7 +92,7 @@
     };
 
     const [trainingInterval, setTrainingInterval] = React.useState("1d");
-    const [trainingSymbols, setTrainingSymbols] = React.useState("AAPL,MSFT,GOOGL,AMZN,NVDA,META,TSLA");
+    const [trainingSymbols, setTrainingSymbols] = React.useState("000001.SZ,600000.SH,600519.SH,300750.SZ,601318.SH");
 
     // 启动模型训练
     const handleTrainModel = async () => {
@@ -371,7 +371,7 @@
                     type="text"
                     value={trainingSymbols}
                     onChange={(e) => setTrainingSymbols(e.target.value)}
-                    placeholder="例如: AAPL,MSFT,TSLA"
+                    placeholder="例如: 000001.SZ, 600519.SH"
                     className="w-full bg-slate-900/50 border border-slate-700/50 rounded-xl px-4 py-2.5 font-mono text-xs text-purple-300 outline-none focus:border-purple-500/50 transition-all shadow-inner"
                   />
                   <p className="mt-2 text-[10px] text-slate-500 leading-relaxed italic">
