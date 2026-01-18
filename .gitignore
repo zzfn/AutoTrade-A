@@ -1,0 +1,96 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+venv/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Type checking
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# AI Agent 工具目录的临时文件
+.agent/*/temp/
+.agent/*/cache/
+.agent/*/logs/
+.agent/*/.tmp*
+.agent/*/*.log
+
+# Claude Code 临时数据
+.claude/*/temp/
+.claude/*/cache/
+.claude/*/logs/
+.claude/*/.tmp*
+.claude/*/*.log
+
+# OpenCode 工具临时数据
+.opencode/*/temp/
+.opencode/*/cache/
+.opencode/*/logs/
+.opencode/*/.tmp*
+.opencode/*/*.log
+
+# AutoTrade 项目特定忽略
+
+# 运行时输出 (outputs/)
+outputs/logs/*.log
+outputs/models/*.pkl
+outputs/models/*.bin
+outputs/models/*.onnx
+outputs/models/*.pt
+outputs/models/*.pth
+outputs/models/checkpoints/*
+outputs/backtests/*
+# 保留所有子目录中的 .gitkeep
+!outputs/**/.gitkeep
+
+# 数据目录 (data/)
+data/*
+!data/.gitkeep
+# 保留子目录结构
+!data/raw/
+!data/processed/
+!data/cache/
+# 忽略子目录内容
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+data/cache/*
+!data/cache/.gitkeep
+
+# Notebooks
+.ipynb_checkpoints
