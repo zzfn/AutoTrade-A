@@ -439,7 +439,49 @@ class AKShareDataProvider(BaseDataProvider):
         except Exception as e:
             logger.warning(f"检查涨跌停状态失败 {symbol}: {e}")
             return False
+    def get_index_constituents(self, index_code: str = "000300") -> list[str]:
+        """
+        获取指数成分股
 
+        Args:
+            index_code: 指数代码，默认 "000300" (沪深300)
+
+        Returns:
+            成分股代码列表 (带后缀)
+        """
+        try:
+            # 移除可能的后缀
+            if "." in index_code:
+                index_code = index_code.split(".")[0]
+            
+            # CSI 300, 500, etc.
+            # ak.index_stock_cons 接受 6 位代码
+            df = ak.index_stock_cons(symbol=index_code)
+            
+            if df.empty:
+                logger.warning(f"获取指数 {index_code} 成分股为空")
+                return []
+                
+            symbols = []
+            for code in df["品种代码"]:
+                code = str(code).zfill(6)
+                # 简单推断后缀
+                if code.startswith(("6", "9")):
+                    suffix = "SH"
+                elif code.startswith(("0", "3")):
+                    suffix = "SZ"
+                elif code.startswith(("4", "8")):
+                    suffix = "BJ" # 北交所
+                else:
+                    suffix = "SZ" # 默认 SZ
+                
+                symbols.append(f"{code}.{suffix}")
+                
+            return symbols
+            
+        except Exception as e:
+            logger.error(f"获取指数 {index_code} 成分股失败: {e}")
+            return []
 
 class DataProviderFactory:
     """

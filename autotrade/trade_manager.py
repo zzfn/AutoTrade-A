@@ -90,6 +90,45 @@ class TradeManager:
 
         return {"status": "ready", "message": "系统就绪，可使用预测和回测功能"}
 
+    def _resolve_symbols(self, symbols: list[str]) -> list[str]:
+        """
+        解析股票代码，支持指数代码扩展（如 CSI300）
+        """
+        if not symbols:
+            return []
+
+        resolved = []
+        try:
+            from autotrade.research.data.providers import DataProviderFactory
+            # 获取 provider
+            provider = DataProviderFactory.get_provider("cn")
+            
+            for s in symbols:
+                s_upper = s.upper().strip()
+                if s_upper in ["CSI300", "000300", "300", "HS300"]:
+                    if hasattr(provider, "get_index_constituents"):
+                        self.log(f"正在获取沪深300成分股...")
+                        cons = provider.get_index_constituents("000300")
+                        self.log(f"已获取 {len(cons)} 只成分股")
+                        resolved.extend(cons)
+                    else:
+                        self.log("Provider 不支持 get_index_constituents")
+                elif s_upper in ["CSI500", "000905", "500", "ZZ500"]:
+                    if hasattr(provider, "get_index_constituents"):
+                        self.log(f"正在获取中证500成分股...")
+                        cons = provider.get_index_constituents("000905")
+                        self.log(f"已获取 {len(cons)} 只成分股")
+                        resolved.extend(cons)
+                else:
+                    resolved.append(s)
+        except Exception as e:
+            self.log(f"解析股票代码失败: {e}")
+            # Fallback to original
+            return symbols
+
+        # 去重
+        return sorted(list(set(resolved)))
+
     def get_latest_predictions(self, symbols: list[str] | None = None) -> dict:
         """
         获取最新的预测信号
@@ -110,7 +149,7 @@ class TradeManager:
             if symbols is None:
                 base_dir = os.path.dirname(os.path.abspath(__file__))
                 config_path = os.path.join(base_dir, "../configs/universe.yaml")
-                symbols = ["000001.SZ", "600000.SH", "600519.SH"]  # 默认 A 股
+                symbols = ["CSI300"]  # 默认 A 股 CSI300
 
                 try:
                     if os.path.exists(config_path):
@@ -120,6 +159,9 @@ class TradeManager:
                                 symbols = config["symbols"]
                 except Exception as e:
                     self.log(f"读取配置失败，使用默认股票列表: {e}")
+
+            # 解析可能的指数代码
+            symbols = self._resolve_symbols(symbols)
 
             # 2. 加载数据
             adapter = QlibDataAdapter(interval="1d", market="cn")
@@ -272,14 +314,17 @@ class TradeManager:
                 )
 
                 # 2. Parse symbols (clean up quotes and spaces)
-                symbol_input = params.get("symbol", "000001.SZ")
+                symbol_input = params.get("symbol", "CSI300")
                 symbols = [
                     s.strip().replace('"', "").replace("'", "")
                     for s in symbol_input.split(",")
                     if s.strip()
                 ]
                 if not symbols:
-                    symbols = ["000001.SZ"]
+                    symbols = ["CSI300"]
+
+                # Resolve symbols (handle CSI300 etc.)
+                symbols = self._resolve_symbols(symbols)
 
                 # 3. Parse interval - A 股仅支持日线
                 interval = "1d"
@@ -549,7 +594,11 @@ class TradeManager:
 
                 # 默认配置 - A 股股票
                 train_config = config or {}
-                symbols = train_config.get("symbols", ["000001.SZ", "600000.SH", "600519.SH"])
+                symbols = train_config.get("symbols", ["CSI300"])
+                
+                # Resolve symbols
+                symbols = self._resolve_symbols(symbols)
+
                 train_days = train_config.get("train_days", 252)
                 target_horizon = train_config.get("target_horizon", 5)
                 interval = "1d"  # A 股仅支持日线
@@ -684,7 +733,11 @@ class TradeManager:
                 self.log("开始数据同步")
 
                 sync_config = config or {}
-                symbols = sync_config.get("symbols", ["000001.SZ", "600000.SH", "600519.SH"])
+                symbols = sync_config.get("symbols", ["CSI300"])
+                
+                # Resolve symbols
+                symbols = self._resolve_symbols(symbols)
+
                 days = sync_config.get("days", 365)
                 interval = "1d"  # A 股仅支持日线
                 update_mode = sync_config.get("update_mode", "append")
