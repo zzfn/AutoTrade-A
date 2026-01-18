@@ -1,6 +1,11 @@
+"""
+AutoTrade-A Web Server - A 股预测信号系统
+
+提供 Web UI 和 API 接口
+"""
+
 import asyncio
 import logging
-import os
 import signal
 import threading
 from contextlib import asynccontextmanager
@@ -11,6 +16,8 @@ from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+import os
+
 from autotrade.trade_manager import TradeManager
 
 
@@ -38,45 +45,33 @@ def _thread_safe_signal(signum, handler):
 
 signal.signal = _thread_safe_signal
 
-# Monkey patch Alpaca broker to avoid AttributeError: 'Alpaca' object has no attribute 'process_pending_orders'
-# this is a known issue in some version of lumibot during shutdown.
-from lumibot.brokers import Alpaca
-if not hasattr(Alpaca, "process_pending_orders"):
-    def _process_pending_orders_patch(self, *args, **kwargs):
-        pass
-    Alpaca.process_pending_orders = _process_pending_orders_patch
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """管理交易策略生命周期的上下文管理器"""
-    logger.info("正在执行交易策略生命周期启动...")
-    
-    # 将初始化放在后台任务中，以免阻塞服务器启动
+    """管理系统生命周期的上下文管理器"""
+    logger.info("正在启动 AutoTrade-A 系统...")
+
+    # 初始化 TradeManager（A 股模式，无需连接交易所）
     async def startup_task():
         try:
-            # 等待一小会儿，确保服务器已经开始监听
             await asyncio.sleep(1)
-            logger.info("后台线程初始化交易策略...")
-            # 使用 run_in_executor 避免同步初始化代码阻塞 asyncio 事件循环
+            logger.info("初始化 A 股预测系统...")
             loop = asyncio.get_event_loop()
             result = await loop.run_in_executor(None, tm.initialize_and_start)
-            logger.info(f"策略启动结果: {result}")
+            logger.info(f"系统启动结果: {result}")
         except Exception as e:
-            logger.error(f"后台策略启动失败: {e}")
+            logger.error(f"系统启动失败: {e}")
             import traceback
             logger.error(traceback.format_exc())
 
-    # 启动后台初始化任务
     init_task = asyncio.create_task(startup_task())
-    
-    yield  # 这里是应用运行期间
+
+    yield  # 应用运行期间
 
     # 应用关闭时的清理逻辑
-    logger.info("正在执行策略生命周期关闭清理...")
-    init_task.cancel()  # 如果还在初始化则取消
+    logger.info("正在关闭系统...")
+    init_task.cancel()
     try:
-        # 使用 to_thread 在同步代码执行期间不阻塞事件循环，并设置 5 秒超时
         await asyncio.wait_for(asyncio.to_thread(tm.stop_strategy), timeout=5.0)
     except asyncio.TimeoutError:
         logger.warning("策略清理超时，强制关闭...")
@@ -86,8 +81,6 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
-
-# ... existing imports ...
 
 # Paths
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -122,6 +115,26 @@ async def read_backtest(request: Request):
 async def run_backtest(request: Request):
     params = await request.json()
     return tm.run_backtest(params)
+
+
+# ==================== 预测 API ====================
+
+
+@app.get("/api/predict")
+async def get_predictions():
+    """获取最新的预测信号"""
+    return tm.get_latest_predictions()
+
+
+@app.post("/api/predict")
+async def get_predictions_with_symbols(request: Request):
+    """获取指定股票的预测信号"""
+    try:
+        data = await request.json()
+        symbols = data.get("symbols")
+        return tm.get_latest_predictions(symbols)
+    except Exception:
+        return tm.get_latest_predictions()
 
 
 # ==================== ML 策略相关 API ====================
@@ -231,10 +244,7 @@ async def websocket_endpoint(websocket: WebSocket):
     logger.info("WebSocket client connected")
     try:
         while True:
-            # Poll state and create a combined dictionary for the frontend
-            # We copy tm.state members to avoid modification while serializing
             try:
-                # Granular copy of state members
                 state = {
                     "status": tm.state.get("status", "unknown"),
                     "logs": list(tm.state.get("logs", [])),
@@ -242,24 +252,22 @@ async def websocket_endpoint(websocket: WebSocket):
                     "portfolio": {
                         "cash": tm.state.get("portfolio", {}).get("cash", 0.0),
                         "value": tm.state.get("portfolio", {}).get("value", 0.0),
-                        "positions": [dict(p) for p in tm.state.get("portfolio", {}).get("positions", [])]
+                        "positions": [dict(p) for p in tm.state.get("portfolio", {}).get("positions", [])],
                     },
                     "market_status": tm.state.get("market_status", "unknown"),
                     "last_update": tm.state.get("last_update"),
                     "strategy_config": tm.get_strategy_config(),
                     "training_status": tm.get_training_status().copy() if isinstance(tm.get_training_status(), dict) else tm.get_training_status(),
-                    "data_sync_status": tm.get_data_sync_status().copy() if isinstance(tm.get_data_sync_status(), dict) else tm.get_data_sync_status()
+                    "data_sync_status": tm.get_data_sync_status().copy() if isinstance(tm.get_data_sync_status(), dict) else tm.get_data_sync_status(),
                 }
-                
-                # Use send_json which handles the serialization
+
                 await websocket.send_json(state)
             except (WebSocketDisconnect, RuntimeError):
                 logger.info("WebSocket connection closed")
                 break
             except Exception as e:
                 logger.error(f"Error preparing or sending WS data: {e}")
-                # Don't break here unless it's a critical one, but log it
-            
+
             await asyncio.sleep(1)  # 1Hz update
     except WebSocketDisconnect:
         logger.info("WebSocket client disconnected")

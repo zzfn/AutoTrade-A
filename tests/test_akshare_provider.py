@@ -12,7 +12,6 @@ import pandas as pd
 from autotrade.research.data.providers import (
     AKShareDataProvider,
     DataProviderFactory,
-    AlpacaDataProvider,
 )
 
 
@@ -106,7 +105,13 @@ class TestDataProviderFactory:
         """测试无效市场应报错"""
         with pytest.raises(ValueError) as exc_info:
             DataProviderFactory.get_provider("jp")
-        assert "不支持的市场" in str(exc_info.value)
+        assert "不支持" in str(exc_info.value)
+
+    def test_get_provider_us_not_supported(self):
+        """测试 US 市场不再支持"""
+        with pytest.raises(ValueError) as exc_info:
+            DataProviderFactory.get_provider("us")
+        assert "不支持" in str(exc_info.value)
 
 
 class TestQlibMLStrategyRules:

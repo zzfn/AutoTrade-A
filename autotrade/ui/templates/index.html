@@ -6,6 +6,27 @@
     const { data, status: connectionStatus } = useWebSocket(
       `ws://${window.location.host}/ws`,
     );
+    const [predictions, setPredictions] = useState(null);
+    const [loadingPredictions, setLoadingPredictions] = useState(false);
+
+    // 加载预测信号
+    const fetchPredictions = async () => {
+      setLoadingPredictions(true);
+      try {
+        const res = await fetch("/api/predict");
+        const data = await res.json();
+        setPredictions(data);
+      } catch (e) {
+        console.error("Failed to fetch predictions", e);
+      } finally {
+        setLoadingPredictions(false);
+      }
+    };
+
+    // 首次加载时获取预测
+    useEffect(() => {
+      fetchPredictions();
+    }, []);
 
     if (!data)
       return (
@@ -13,7 +34,7 @@
           <div className="flex flex-col items-center gap-4">
             <div className="w-8 h-8 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin"></div>
             <div className="text-slate-400 text-sm font-medium">
-              正在连接交易引擎...
+              正在连接 A 股预测系统...
               <span className="text-xs ml-2 opacity-50">
                 ({connectionStatus})
               </span>
@@ -27,24 +48,102 @@
 
     return (
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 fade-in">
+        {/* Prediction Signals - 新增 */}
+        <Card title="📊 最新预测信号" className="col-span-1 md:col-span-3">
+          <div className="mb-4 flex justify-between items-center">
+            <div className="text-sm text-slate-400">
+              {predictions?.date && (
+                <span>
+                  数据日期:{" "}
+                  <span className="text-cyan-400 font-mono">
+                    {predictions.date}
+                  </span>
+                  {predictions?.model && (
+                    <span className="ml-4">
+                      模型:{" "}
+                      <span className="text-purple-400">
+                        {predictions.model}
+                      </span>
+                    </span>
+                  )}
+                </span>
+              )}
+            </div>
+            <button
+              onClick={fetchPredictions}
+              disabled={loadingPredictions}
+              className="px-3 py-1.5 bg-cyan-500/20 text-cyan-400 rounded-lg text-xs font-medium hover:bg-cyan-500/30 transition-colors disabled:opacity-50"
+            >
+              {loadingPredictions ? "加载中..." : "刷新预测"}
+            </button>
+          </div>
+
+          {predictions?.status === "error" ? (
+            <div className="p-6 bg-rose-500/10 border border-rose-500/20 rounded-xl text-center">
+              <div className="text-rose-400 mb-2">⚠️ {predictions.message}</div>
+              <div className="text-xs text-slate-500">
+                请先在「模型管理」页面训练模型
+              </div>
+            </div>
+          ) : predictions?.predictions?.length > 0 ? (
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+              {predictions.predictions.map((pred, i) => (
+                <div
+                  key={i}
+                  className={`p-4 rounded-xl border ${
+                    pred.signal === "BUY"
+                      ? "bg-emerald-500/10 border-emerald-500/30"
+                      : pred.signal === "SELL"
+                        ? "bg-rose-500/10 border-rose-500/30"
+                        : "bg-slate-800/50 border-slate-700/30"
+                  }`}
+                >
+                  <div className="text-lg font-bold text-slate-100 mb-1">
+                    {pred.symbol.split(".")[0]}
+                    <span className="text-xs text-slate-500 ml-1">
+                      .{pred.symbol.split(".")[1]}
+                    </span>
+                  </div>
+                  <div
+                    className={`text-sm font-bold ${
+                      pred.signal === "BUY"
+                        ? "text-emerald-400"
+                        : pred.signal === "SELL"
+                          ? "text-rose-400"
+                          : "text-slate-400"
+                    }`}
+                  >
+                    {pred.signal === "BUY"
+                      ? "📈 买入"
+                      : pred.signal === "SELL"
+                        ? "📉 卖出"
+                        : "➖ 持有"}
+                  </div>
+                  <div className="text-xs text-slate-500 mt-1">
+                    得分: {pred.score.toFixed(4)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-slate-500 text-center py-12 italic border border-dashed border-slate-700/50 rounded-xl bg-slate-800/20">
+              {loadingPredictions ? "正在加载预测信号..." : "暂无预测信号"}
+            </div>
+          )}
+        </Card>
+
         {/* Control Panel */}
-        <Card title="控制面板" className="col-span-1">
+        <Card title="系统状态" className="col-span-1">
           <div className="flex flex-col gap-5">
             <div className="flex justify-between items-center p-3 bg-slate-800/30 rounded-lg border border-slate-700/30">
-              <span className="text-slate-400 text-sm">代理状态</span>
-              <StatusBadge status={data.status} />
+              <span className="text-slate-400 text-sm">系统模式</span>
+              <span className="text-xs font-bold px-2 py-1 rounded border bg-orange-500/10 text-orange-400 border-orange-500/20">
+                🇨🇳 A股预测
+              </span>
             </div>
             <div className="flex justify-between items-center p-3 bg-slate-800/30 rounded-lg border border-slate-700/30 mt-2">
-              <span className="text-slate-400 text-sm">市场状态</span>
-              <span
-                className={`text-xs font-bold px-2 py-1 rounded border ${data.market_status === "open" ? "bg-green-500/10 text-green-400 border-green-500/20" : "bg-slate-500/10 text-slate-400 border-slate-500/20"}`}
-              >
-                {data.market_status
-                  ? data.market_status === "open"
-                    ? "开盘中"
-                    : "已休市"
-                  : "未知"}
-              </span>
+              <span className="text-slate-400 text-sm">运行状态</span>
+              <StatusBadge status={data.status} />
             </div>
             <div className="flex justify-between items-center text-xs text-slate-500 px-1 mt-2">
               <span>系统时间</span>
@@ -52,35 +151,41 @@
                 {new Date().toLocaleTimeString()}
               </span>
             </div>
-            {/* Start/Stop buttons removed as strategy auto-start is enabled */}
+            <div className="p-3 bg-cyan-500/5 rounded-lg border border-cyan-500/20 mt-2">
+              <p className="text-xs text-cyan-300">
+                💡 提示: 本系统仅提供 A 股预测信号，不进行实际交易
+              </p>
+            </div>
           </div>
         </Card>
 
-        {/* Portfolio Summary */}
-        <Card title="投资组合概览" className="col-span-1 md:col-span-2">
+        {/* Quick Stats */}
+        <Card title="系统概览" className="col-span-1 md:col-span-2">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="bg-slate-800/30 p-5 rounded-xl border border-slate-700/30 flex flex-col justify-between">
               <div className="text-slate-400 text-xs font-medium uppercase tracking-wider mb-1">
-                总权益
-              </div>
-              <div className="text-2xl font-bold text-slate-100 mt-1">
-                ${data.portfolio.value.toFixed(2)}
-              </div>
-            </div>
-            <div className="bg-slate-800/30 p-5 rounded-xl border border-slate-700/30 flex flex-col justify-between">
-              <div className="text-slate-400 text-xs font-medium uppercase tracking-wider mb-1">
-                现金
-              </div>
-              <div className="text-2xl font-bold text-cyan-400 mt-1">
-                ${data.portfolio.cash.toFixed(2)}
-              </div>
-            </div>
-            <div className="bg-slate-800/30 p-5 rounded-xl border border-slate-700/30 flex flex-col justify-between">
-              <div className="text-slate-400 text-xs font-medium uppercase tracking-wider mb-1">
-                持仓数量
+                预测股票数
               </div>
               <div className="text-2xl font-bold text-purple-400 mt-1">
-                {data.portfolio.positions.length}
+                {predictions?.predictions?.length || 0}
+              </div>
+            </div>
+            <div className="bg-slate-800/30 p-5 rounded-xl border border-slate-700/30 flex flex-col justify-between">
+              <div className="text-slate-400 text-xs font-medium uppercase tracking-wider mb-1">
+                买入信号
+              </div>
+              <div className="text-2xl font-bold text-emerald-400 mt-1">
+                {predictions?.predictions?.filter((p) => p.signal === "BUY")
+                  .length || 0}
+              </div>
+            </div>
+            <div className="bg-slate-800/30 p-5 rounded-xl border border-slate-700/30 flex flex-col justify-between">
+              <div className="text-slate-400 text-xs font-medium uppercase tracking-wider mb-1">
+                卖出信号
+              </div>
+              <div className="text-2xl font-bold text-rose-400 mt-1">
+                {predictions?.predictions?.filter((p) => p.signal === "SELL")
+                  .length || 0}
               </div>
             </div>
             <div className="bg-slate-800/30 p-5 rounded-xl border border-slate-700/30 flex flex-col justify-between">
@@ -94,134 +199,6 @@
               </div>
             </div>
           </div>
-        </Card>
-        {console.log(data)}
-        {/* Positions */}
-        <Card title="当前持仓" className="col-span-1 md:col-span-3">
-          {data.portfolio.positions.length === 0 ? (
-            <div className="text-slate-500 text-center py-12 italic border border-dashed border-slate-700/50 rounded-xl bg-slate-800/20">
-              暂无活跃持仓
-            </div>
-          ) : (
-            <div className="overflow-x-auto rounded-lg border border-slate-700/30">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="text-slate-400 text-sm bg-slate-800/50 border-b border-slate-700/30">
-                    <th className="p-4 font-medium">代码</th>
-                    <th className="p-4 font-medium">数量</th>
-                    <th className="p-4 font-medium">平均成本</th>
-                    <th className="p-4 font-medium">现价</th>
-                    <th className="p-4 font-medium">盈亏 (P/L)</th>
-                  </tr>
-                </thead>
-                <tbody className="text-slate-300 text-sm">
-                  {data.portfolio.positions.map((pos, i) => {
-                    const pl = pos.unrealized_pl || 0.0;
-                    // Use backend provided percentage if available, otherwise calculate fallback
-                    const plPercent =
-                      pos.unrealized_plpc !== undefined
-                        ? pos.unrealized_plpc * 100
-                        : pos.average_price !== 0
-                          ? (pl /
-                              (pos.average_price * Math.abs(pos.quantity))) *
-                            100
-                          : 0;
-
-                    return (
-                      <tr
-                        key={i}
-                        className="border-b border-slate-800/30 hover:bg-slate-700/20 transition-colors last:border-0"
-                      >
-                        <td className="p-4 font-bold text-cyan-300">
-                          {pos.symbol}
-                          {pos.asset_class &&
-                            !["stock", "us_equity"].includes(
-                              pos.asset_class.toLowerCase(),
-                            ) && (
-                              <span className="ml-2 text-[10px] bg-slate-700 text-slate-400 px-1 py-0.5 rounded uppercase font-normal">
-                                {pos.asset_class}
-                              </span>
-                            )}
-                        </td>
-                        <td className="p-4">{pos.quantity}</td>
-                        <td className="p-4 text-slate-400">
-                          ${pos.average_price.toFixed(2)}
-                        </td>
-                        <td className="p-4">
-                          ${pos.current_price?.toFixed(2) || "-"}
-                        </td>
-                        <td
-                          className={`p-4 font-bold ${pl >= 0 ? "text-emerald-400" : "text-rose-400"}`}
-                        >
-                          {pl >= 0 ? "+" : ""}
-                          {pl.toFixed(2)}{" "}
-                          <span className="text-xs opacity-70 ml-1">
-                            ({plPercent >= 0 ? "+" : ""}
-                            {plPercent.toFixed(2)}%)
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Card>
-
-        {/* Orders */}
-        <Card title="最近订单" className="col-span-1 md:col-span-3">
-          {!data.orders || data.orders.length === 0 ? (
-            <div className="text-slate-500 text-center py-8 italic border border-dashed border-slate-700/50 rounded-xl bg-slate-800/20">
-              暂无订单记录
-            </div>
-          ) : (
-            <div className="overflow-x-auto rounded-lg border border-slate-700/30">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="text-slate-400 text-sm bg-slate-800/50 border-b border-slate-700/30">
-                    <th className="p-4 font-medium">时间</th>
-                    <th className="p-4 font-medium">代码</th>
-                    <th className="p-4 font-medium">操作</th>
-                    <th className="p-4 font-medium">数量</th>
-                    <th className="p-4 font-medium">价格</th>
-                    <th className="p-4 font-medium">状态</th>
-                  </tr>
-                </thead>
-                <tbody className="text-slate-300 text-sm">
-                  {data.orders.map((order, i) => (
-                    <tr
-                      key={i}
-                      className="border-b border-slate-800/30 hover:bg-slate-700/20 transition-colors last:border-0"
-                    >
-                      <td className="p-4 text-slate-400 text-xs font-mono">
-                        {order.timestamp
-                          ? order.timestamp.split("T")[1].split(".")[0]
-                          : "-"}
-                      </td>
-                      <td className="p-4 font-bold text-cyan-300">
-                        {order.symbol}
-                      </td>
-                      <td className="p-4">
-                        <span
-                          className={`px-2 py-0.5 rounded text-xs font-bold uppercase ${order.action === "BUY" ? "bg-emerald-500/20 text-emerald-400" : "bg-rose-500/20 text-rose-400"}`}
-                        >
-                          {order.action}
-                        </span>
-                      </td>
-                      <td className="p-4">{order.quantity}</td>
-                      <td className="p-4 text-slate-400">
-                        ${order.price?.toFixed(2)}
-                      </td>
-                      <td className="p-4 text-xs uppercase tracking-wider text-slate-500">
-                        {order.status}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
         </Card>
 
         {/* Logs */}

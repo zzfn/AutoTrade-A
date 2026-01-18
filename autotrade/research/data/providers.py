@@ -1,12 +1,9 @@
 """
-数据提供者模块 - 支持美股 (Alpaca) 和 A 股 (AKShare) 数据获取
+数据提供者模块 - A 股数据获取
 
-多市场数据源：
-- 美股: Alpaca API (需要 API 密钥)
-- A股: AKShare (免费，无需注册)
+AutoTrade-A 专用：仅支持 A 股 (AKShare) 数据源
 """
 
-import os
 import re
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta
@@ -14,10 +11,6 @@ from typing import Optional
 
 import akshare as ak
 import pandas as pd
-from alpaca.data import StockHistoricalDataClient
-from alpaca.data.enums import DataFeed
-from alpaca.data.requests import StockBarsRequest
-from alpaca.data.timeframe import TimeFrame
 from loguru import logger
 
 
@@ -39,7 +32,7 @@ class BaseDataProvider(ABC):
             symbols: 股票代码列表
             start_date: 开始日期
             end_date: 结束日期
-            interval: 频率 ('1d' 或 '1h')
+            interval: 频率 ('1d')
 
         Returns:
             包含 OHLCV 数据的 DataFrame，MultiIndex: (datetime, symbol)
@@ -50,110 +43,6 @@ class BaseDataProvider(ABC):
     def is_available(self) -> bool:
         """检查数据源是否可用"""
         pass
-
-
-class AlpacaDataProvider(BaseDataProvider):
-    """
-    Alpaca 数据提供者 - 美股主要数据源
-
-    从 Alpaca API 获取美股历史 OHLCV 数据
-    """
-
-    def __init__(self, api_key: str | None = None, secret_key: str | None = None):
-        self.api_key = api_key or os.getenv("ALPACA_API_KEY")
-        self.secret_key = secret_key or os.getenv("ALPACA_API_SECRET")
-        self._client: Optional[StockHistoricalDataClient] = None
-
-    def _get_client(self) -> StockHistoricalDataClient:
-        """获取或创建 Alpaca 客户端"""
-        if self._client is None:
-            self._client = StockHistoricalDataClient(self.api_key, self.secret_key)
-        return self._client
-
-    def is_available(self) -> bool:
-        """检查 Alpaca API 是否可用"""
-        if not self.api_key or not self.secret_key:
-            return False
-        try:
-            client = self._get_client()
-            # 尝试获取一小段数据来验证连接
-            request = StockBarsRequest(
-                symbol_or_symbols=["SPY"],
-                timeframe=TimeFrame.Day,
-                start=datetime.now() - timedelta(days=5),
-                end=datetime.now() - timedelta(days=1),
-                feed=DataFeed.IEX,  # 免费账户使用 IEX 数据源
-            )
-            client.get_stock_bars(request)
-            return True
-        except Exception as e:
-            logger.warning(f"Alpaca API 不可用: {e}")
-            return False
-
-    def fetch_data(
-        self,
-        symbols: list[str],
-        start_date: datetime,
-        end_date: datetime,
-        interval: str = "1d",
-    ) -> pd.DataFrame:
-        """
-        从 Alpaca 获取历史数据
-
-        Returns:
-            DataFrame with columns: open, high, low, close, volume
-            MultiIndex: (datetime, symbol)
-        """
-        logger.info(f"从 Alpaca 获取数据: {symbols}, {start_date} - {end_date}, interval={interval}")
-
-        client = self._get_client()
-
-        # 映射 interval 到 Alpaca TimeFrame
-        if interval == "1h":
-            tf = TimeFrame.Hour
-        else:
-            tf = TimeFrame.Day
-
-        request = StockBarsRequest(
-            symbol_or_symbols=symbols,
-            timeframe=tf,
-            start=start_date,
-            end=end_date,
-            feed=DataFeed.IEX,  # 免费账户使用 IEX 数据源
-        )
-
-        bars = client.get_stock_bars(request)
-        df = bars.df
-
-        if df.empty:
-            logger.warning("Alpaca 返回空数据")
-            return pd.DataFrame()
-
-        # 重命名列以匹配标准格式
-        df = df.rename(
-            columns={
-                "open": "open",
-                "high": "high",
-                "low": "low",
-                "close": "close",
-                "volume": "volume",
-            }
-        )
-
-        # 只保留需要的列
-        df = df[["open", "high", "low", "close", "volume"]]
-
-        # 确保索引格式正确 (datetime, symbol)
-        if isinstance(df.index, pd.MultiIndex):
-            # Alpaca 返回的是 (symbol, datetime)，需要交换
-            df = df.reset_index()
-            if "symbol" in df.columns and "timestamp" in df.columns:
-                df["timestamp"] = pd.to_datetime(df["timestamp"]).dt.tz_localize(None)
-                df = df.set_index(["timestamp", "symbol"])
-                df = df.sort_index()
-
-        logger.info(f"从 Alpaca 获取了 {len(df)} 条记录")
-        return df
 
 
 class AKShareDataProvider(BaseDataProvider):
@@ -486,27 +375,24 @@ class AKShareDataProvider(BaseDataProvider):
 
 class DataProviderFactory:
     """
-    数据提供者工厂 - 支持多市场
+    数据提供者工厂 - A 股专用
 
-    市场映射：
-    - "us": AlpacaDataProvider (美股)
-    - "cn": AKShareDataProvider (A 股)
+    AutoTrade-A 仅支持 A 股市场，默认返回 AKShareDataProvider
     """
 
     @staticmethod
-    def get_provider(market: str = "us") -> BaseDataProvider:
+    def get_provider(market: str = "cn") -> BaseDataProvider:
         """
-        根据市场获取对应数据提供者
+        获取 A 股数据提供者
 
         Args:
-            market: 市场代码 ("us" 或 "cn")
+            market: 市场代码（仅支持 "cn"）
 
         Returns:
-            对应市场的数据提供者实例
+            AKShareDataProvider 实例
 
         Raises:
             ValueError: 不支持的市场
-            RuntimeError: 数据源不可用
         """
         market = market.lower()
 
@@ -514,17 +400,7 @@ class DataProviderFactory:
             logger.info("使用 AKShare 作为 A 股数据源")
             return AKShareDataProvider()
 
-        elif market == "us":
-            alpaca = AlpacaDataProvider()
-            if alpaca.is_available():
-                logger.info("使用 Alpaca 作为美股数据源")
-                return alpaca
-            raise RuntimeError(
-                "Alpaca 数据源不可用。请确保已设置 ALPACA_API_KEY 和 ALPACA_API_SECRET 环境变量。"
-            )
-
         else:
             raise ValueError(
-                f"不支持的市场: {market}。支持的市场: 'us' (美股), 'cn' (A股)"
+                f"AutoTrade-A 仅支持 A 股市场 (cn)，不支持: {market}"
             )
-

@@ -1,13 +1,17 @@
+"""
+TradeManager - A 股交易管理器
+
+AutoTrade-A 专用：仅支持 A 股预测和回测
+"""
+
 import os
 import threading
 import yaml
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from lumibot.backtesting import YahooDataBacktesting
-from lumibot.brokers import Alpaca
-from lumibot.traders import Trader
 
 from autotrade.execution.strategies import QlibMLStrategy
 from autotrade.research.models import ModelManager
@@ -72,87 +76,154 @@ class TradeManager:
         self.active_strategy = strategy_instance
 
     def initialize_and_start(self):
-        """Initialize the broker, strategy, and trader, then start the thread."""
+        """
+        初始化策略（A 股模式：仅用于预测信号，不进行实际交易）
+
+        AutoTrade-A 不支持实时交易，仅提供预测信号和回测功能。
+        """
         if self.is_running:
             return {"status": "already_running"}
 
-        # 1. Load credentials
-        api_key = os.getenv("ALPACA_API_KEY")
-        secret_key = os.getenv("ALPACA_API_SECRET")
-        paper_trading = os.getenv("ALPACA_PAPER", "True").lower() == "true"
+        self.log("AutoTrade-A 已启动 - A 股预测信号模式")
+        self.log("说明: 本系统仅提供预测信号和回测功能，不进行实际交易")
+        self.update_status("ready")
 
-        if not api_key or not secret_key:
-            self.log(
-                "错误: 环境变量中未找到 Alpaca 凭证 (ALPACA_API_KEY, ALPACA_API_SECRET)。"
-            )
-            return {"status": "error", "message": "缺少凭证"}
+        return {"status": "ready", "message": "系统就绪，可使用预测和回测功能"}
 
+    def get_latest_predictions(self, symbols: list[str] | None = None) -> dict:
+        """
+        获取最新的预测信号
+
+        Args:
+            symbols: 股票代码列表，如果为 None 则使用默认配置
+
+        Returns:
+            包含预测信号的字典
+        """
         try:
-            # 2. Setup Broker
-            broker = Alpaca(
-                {"API_KEY": api_key, "API_SECRET": secret_key, "PAPER": paper_trading}
-            )
+            from autotrade.research.data import QlibDataAdapter
+            from autotrade.research.features import QlibFeatureGenerator
 
-            # 3. Load symbols from config
-            base_dir = os.path.dirname(os.path.abspath(__file__))
-            config_path = os.path.join(base_dir, "../configs/universe.yaml")
-            symbols = ["SPY"]  # Default
+            self.log("正在获取预测信号...")
 
-            try:
-                if os.path.exists(config_path):
-                    with open(config_path, "r") as f:
-                        config = yaml.safe_load(f)
-                        if config and "symbols" in config:
-                            symbols = config["symbols"]
-                            self.log(f"Loaded symbols from config: {symbols}")
-                        else:
-                            self.log(
-                                "Config file found but no 'symbols' key. Using default."
-                            )
-                else:
-                    self.log(
-                        f"Config file not found at {config_path}. Using default symbols."
-                    )
-            except Exception as e:
-                self.log(f"Error reading config file: {e}. Using default symbols.")
+            # 1. 加载配置的股票列表
+            if symbols is None:
+                base_dir = os.path.dirname(os.path.abspath(__file__))
+                config_path = os.path.join(base_dir, "../configs/universe.yaml")
+                symbols = ["000001.SZ", "600000.SH", "600519.SH"]  # 默认 A 股
 
-            self.log(f"Starting strategy for symbols: {symbols}")
+                try:
+                    if os.path.exists(config_path):
+                        with open(config_path, "r") as f:
+                            config = yaml.safe_load(f)
+                            if config and "symbols" in config:
+                                symbols = config["symbols"]
+                except Exception as e:
+                    self.log(f"读取配置失败，使用默认股票列表: {e}")
 
-            # 4. Create ML Strategy
-            # 如果 model_name 为 None，使用 ModelManager 的当前模型（最优模型）
+            # 2. 加载数据
+            adapter = QlibDataAdapter(interval="1d", market="cn")
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=60)  # 获取60天数据用于特征计算
+
+            df = adapter.load_data(symbols, start_date, end_date)
+
+            if df.empty:
+                # 如果没有本地数据，尝试获取
+                self.log("本地无数据，正在从 AKShare 获取...")
+                adapter.fetch_and_store(symbols, start_date, end_date)
+                df = adapter.load_data(symbols, start_date, end_date)
+
+            if df.empty:
+                return {
+                    "status": "error",
+                    "message": "无法获取数据",
+                    "predictions": [],
+                }
+
+            # 3. 生成特征
+            feature_gen = QlibFeatureGenerator(normalize=True)
+            features = feature_gen.generate(df)
+
+            # 4. 加载模型
             model_name = self.ml_config.get("model_name")
             if model_name is None:
-                # 自动选择最优模型
                 model_name = self.model_manager.get_current_model()
-                if model_name:
-                    self.log(f"自动选择最优模型: {model_name}")
-                else:
-                    self.log("未找到训练好的模型，将使用默认模型")
 
-            strategy_params = {
-                "symbols": symbols,
-                "model_name": model_name,
-                "top_k": self.ml_config.get("top_k", 3),
-                "rebalance_period": self.ml_config.get("rebalance_period", 1),
-                "sleeptime": "1D",  # ML 策略通常是日频
+            if not model_name:
+                return {
+                    "status": "error",
+                    "message": "未找到可用模型，请先训练模型",
+                    "predictions": [],
+                }
+
+            model_info = self.model_manager.get_model_info(model_name)
+            if not model_info or "path" not in model_info:
+                return {
+                    "status": "error",
+                    "message": f"模型 {model_name} 不可用",
+                    "predictions": [],
+                }
+
+            # 5. 加载模型并预测
+            import pickle
+            import numpy as np
+
+            model_path = Path(model_info["path"]) / "model.pkl"
+            with open(model_path, "rb") as f:
+                model = pickle.load(f)
+
+            # 获取每只股票最新的特征
+            predictions = []
+            latest_date = features.index.get_level_values(0).max()
+
+            for symbol in symbols:
+                try:
+                    # 获取该股票最新日期的特征
+                    if (latest_date, symbol) in features.index:
+                        symbol_features = features.loc[(latest_date, symbol)]
+                        X = symbol_features.values.reshape(1, -1)
+                        pred_score = model.predict(X)[0]
+
+                        # 转换为信号
+                        if pred_score > 0.01:
+                            signal = "BUY"
+                        elif pred_score < -0.01:
+                            signal = "SELL"
+                        else:
+                            signal = "HOLD"
+
+                        predictions.append({
+                            "symbol": symbol,
+                            "signal": signal,
+                            "score": float(pred_score),
+                            "confidence": abs(float(pred_score)) * 100,
+                            "date": latest_date.strftime("%Y-%m-%d"),
+                        })
+                except Exception as e:
+                    self.log(f"预测 {symbol} 失败: {e}")
+
+            # 按得分排序
+            predictions.sort(key=lambda x: x["score"], reverse=True)
+
+            self.log(f"预测完成: {len(predictions)} 只股票")
+
+            return {
+                "status": "success",
+                "model": model_name,
+                "date": latest_date.strftime("%Y-%m-%d"),
+                "predictions": predictions,
             }
 
-            strategy = QlibMLStrategy(broker=broker, parameters=strategy_params)
-            self.log(f"使用 QlibMLStrategy，模型: {model_name or '默认'}")
-
-            # 5. Create Trader and register
-            self.trader = Trader()
-            self.trader.add_strategy(strategy)
-
-            self.set_strategy(strategy)
-
-            # 6. Start the logic
-            started = self.start_strategy(runner=self.trader.run_all)
-            return {"status": "started" if started else "failed"}
-
         except Exception as e:
-            self.log(f"Failed to setup strategy: {e}")
-            return {"status": "error", "message": str(e)}
+            import traceback
+            self.log(f"预测失败: {e}")
+            traceback.print_exc()
+            return {
+                "status": "error",
+                "message": str(e),
+                "predictions": [],
+            }
 
     def run_backtest(self, params: dict):
         """Run a backtest in a separate thread."""
@@ -170,37 +241,31 @@ class TradeManager:
                 )
 
                 # 2. Parse symbols (clean up quotes and spaces)
-                symbol_input = params.get("symbol", "SPY")
+                symbol_input = params.get("symbol", "000001.SZ")
                 symbols = [
                     s.strip().replace('"', "").replace("'", "")
                     for s in symbol_input.split(",")
                     if s.strip()
                 ]
                 if not symbols:
-                    symbols = ["SPY"]
+                    symbols = ["000001.SZ"]
 
-                # 3. Parse interval
-                interval = params.get("interval", "1d")
-                if interval not in ["1d", "1h"]:
-                    interval = "1d"
+                # 3. Parse interval - A 股仅支持日线
+                interval = "1d"
 
-                # 4. Parse market (美股/A股)
-                market = params.get("market", "us").lower()
-                market_label = "A股" if market == "cn" else "美股"
+                # 4. A 股市场固定
+                market = "cn"
 
                 self.log(
-                    f"Backtesting [{market_label}] {symbols} from {backtesting_start} to {backtesting_end} (Interval: {interval})"
+                    f"Backtesting [A股] {symbols} from {backtesting_start} to {backtesting_end} (Interval: {interval})"
                 )
 
                 # 5. Execute backtest with ML strategy
                 strategy_class = QlibMLStrategy
 
                 try:
-                    # Map interval to LumiBot frequency
-                    # LumiBot usually uses 'day', 'hour', 'minute', etc.
-                    lumibot_interval = "hour" if interval == "1h" else "day"
+                    lumibot_interval = "day"
 
-                    # Strategy.backtest is a blocking call
                     # 如果未指定模型，使用当前最优模型
                     model_name = params.get("model_name", self.ml_config.get("model_name"))
                     if model_name is None:
@@ -212,19 +277,12 @@ class TradeManager:
                         "top_k": params.get("top_k", self.ml_config.get("top_k", 3)),
                         "rebalance_period": params.get("rebalance_period", 1),
                         "sleeptime": "0S",
-                        "timestep": "1H" if interval == "1h" else "1D",
-                        "market": market,  # 传递市场参数
+                        "timestep": "1D",
+                        "market": market,
                     }
 
-                    # 根据市场选择基准
-                    if market == "cn":
-                        # A股暂无对应的基准指数，使用第一个股票
-                        benchmark = symbols[0] if symbols else "000001.SZ"
-                    else:
-                        # If multiple symbols, use SPY as benchmark for better clarity
-                        benchmark = (
-                            "SPY" if len(symbols) > 1 or symbols[0] != "SPY" else symbols[0]
-                        )
+                    # A 股使用第一个股票作为基准
+                    benchmark = symbols[0] if symbols else "000001.SZ"
 
                     # Start time to identify new files
                     start_time = datetime.now()
@@ -235,7 +293,6 @@ class TradeManager:
                         backtesting_end,
                         benchmark_asset=benchmark,
                         parameters=backtest_params,
-                        # LumiBot uses time_unit for interval
                         time_unit=lumibot_interval,
                     )
 
@@ -312,122 +369,17 @@ class TradeManager:
                 self.update_status("stopped")
                 self.log("Strategy stopped.")
 
-        def monitor_target():
-            """Polls the strategy for state updates while it is running."""
-            import time
-
-            while self.is_running:
-                try:
-                    if self.active_strategy and hasattr(
-                        self.active_strategy, "get_datetime"
-                    ):
-                        # Only update if the strategy is actually initialized and running
-                        # Note: We use a try-except because LumiBot methods might fail if not ready
-                        try:
-                            cash = float(self.active_strategy.get_cash())
-                            value = float(self.active_strategy.portfolio_value)
-
-                            # Get symbols from the strategy
-                            symbols = getattr(self.active_strategy, "symbols", [])
-                            positions_data = []
-                            for symbol in symbols:
-                                pos = self.active_strategy.get_position(symbol)
-                                if pos:
-                                    positions_data.append(
-                                        {
-                                            "symbol": symbol,
-                                            "quantity": float(pos.quantity),
-                                            "average_price": float(pos.average_price),
-                                            "current_price": float(
-                                                self.active_strategy.get_last_price(
-                                                    symbol
-                                                )
-                                            )
-                                            if hasattr(
-                                                self.active_strategy, "get_last_price"
-                                            )
-                                            else 0.0,
-                                            "unrealized_pl": float(pos.unrealized_pl)
-                                            if hasattr(pos, "unrealized_pl")
-                                            else 0.0,
-                                            "unrealized_plpc": float(
-                                                pos.unrealized_plpc
-                                            )
-                                            if hasattr(pos, "unrealized_plpc")
-                                            else 0.0,
-                                        }
-                                    )
-
-                            # Sync orders
-                            lumi_orders = self.active_strategy.get_orders()
-                            current_order_ids = [o["id"] for o in self.state["orders"]]
-
-                            for o in lumi_orders:
-                                order_id = str(o.identifier)
-                                if order_id not in current_order_ids:
-                                    order_info = {
-                                        "id": order_id,
-                                        "symbol": o.asset.symbol,
-                                        "action": str(o.side).upper(),
-                                        "quantity": float(o.quantity),
-                                        "price": float(o.price) if o.price else 0.0,
-                                        "status": str(o.status),
-                                        "timestamp": self.active_strategy.get_datetime().isoformat(),
-                                    }
-                                    self.add_order(order_info)
-                                    self.log(
-                                        f"New Order: {order_info['action']} {order_info['quantity']} {order_info['symbol']} @ {order_info['price']}"
-                                    )
-                                else:
-                                    # Update status of existing orders if they changed
-                                    for existing in self.state["orders"]:
-                                        if existing["id"] == order_id and existing[
-                                            "status"
-                                        ] != str(o.status):
-                                            existing["status"] = str(o.status)
-                                            self.log(
-                                                f"Order Update: {order_id} is now {str(o.status)}"
-                                            )
-
-                            market_status = (
-                                "open"
-                                if self.active_strategy.get_datetime().weekday() < 5
-                                else "closed"
-                            )
-                            self.update_portfolio(
-                                cash, value, positions_data, market_status=market_status
-                            )
-                        except:
-                            pass  # Might not be fully initialized yet
-                except Exception as e:
-                    print(f"Monitor error: {e}")
-                time.sleep(1)  # Poll every 1 second
-
         self.is_running = True
         self.update_status("running")
 
-        # Start both strategy and monitor
         self.strategy_thread = threading.Thread(target=run_target, daemon=True)
-        self.monitor_thread = threading.Thread(target=monitor_target, daemon=True)
-
         self.strategy_thread.start()
-        self.monitor_thread.start()
         return True
 
     def stop_strategy(self):
         """Stop the running strategy."""
         self.log("Stopping strategy...")
         self.update_status("stopping")
-
-        if hasattr(self, "trader") and self.trader:
-            try:
-                # In newer LumiBot versions, we can stop the trader
-                # If not available, we at least mark it as not running
-                if hasattr(self.trader, "stop_all"):
-                    # This might block, but we call it from a thread or with timeout
-                    self.trader.stop_all()
-            except Exception as e:
-                self.log(f"Error stopping trader: {e}")
 
         # Force thread to end if possible and mark as stopped
         self.is_running = False
@@ -447,7 +399,6 @@ class TradeManager:
             self.state["logs"].pop(0)
 
     def update_portfolio(self, cash, value, positions, market_status="unknown"):
-        # print(f"DEBUG: Updating portfolio: Cash={cash}, Val={value}, Pos={len(positions)}, Market={market_status}")
         self.state["portfolio"] = {"cash": cash, "value": value, "positions": positions}
         self.state["market_status"] = market_status
         self.state["last_update"] = datetime.now().isoformat()
@@ -559,27 +510,25 @@ class TradeManager:
                 from autotrade.research.data import QlibDataAdapter
                 from autotrade.research.features import QlibFeatureGenerator
                 from autotrade.research.models import LightGBMTrainer
-                from datetime import timedelta
 
                 self.training_status["in_progress"] = True
                 self.training_status["progress"] = 0
                 self.training_status["message"] = "开始模型训练..."
                 self.log("开始模型训练")
 
-                # 默认配置
+                # 默认配置 - A 股股票
                 train_config = config or {}
-                symbols = train_config.get("symbols", ["SPY", "AAPL", "MSFT"])
+                symbols = train_config.get("symbols", ["000001.SZ", "600000.SH", "600519.SH"])
                 train_days = train_config.get("train_days", 252)
                 target_horizon = train_config.get("target_horizon", 5)
-                interval = train_config.get("interval", "1d")
+                interval = "1d"  # A 股仅支持日线
 
                 # 1. 加载数据 (20%)
                 self.training_status["progress"] = 10
                 self.training_status["message"] = f"加载数据 ({interval})..."
 
-                adapter = QlibDataAdapter(interval=interval)
+                adapter = QlibDataAdapter(interval=interval, market="cn")
                 end_date = datetime.now()
-                # 增加一点缓冲，确保覆盖足够的数据，特别是对于小时数据
                 start_date = end_date - timedelta(days=train_days + 60)
 
                 # 尝试获取新数据
@@ -649,6 +598,7 @@ class TradeManager:
                         "symbols": symbols,
                         "train_days": train_days,
                         "interval": interval,
+                        "market": "cn",
                         "ic": metrics["ic"],
                         "icir": metrics["icir"],
                         "trained_via_ui": True,
@@ -696,7 +646,6 @@ class TradeManager:
         def _data_sync_task():
             try:
                 from autotrade.research.data import QlibDataAdapter
-                from datetime import timedelta
 
                 self.data_sync_status["in_progress"] = True
                 self.data_sync_status["progress"] = 0
@@ -704,17 +653,17 @@ class TradeManager:
                 self.log("开始数据同步")
 
                 sync_config = config or {}
-                symbols = sync_config.get("symbols", ["SPY", "AAPL", "MSFT"])
+                symbols = sync_config.get("symbols", ["000001.SZ", "600000.SH", "600519.SH"])
                 days = sync_config.get("days", 365)
-                interval = sync_config.get("interval", "1d")
+                interval = "1d"  # A 股仅支持日线
                 update_mode = sync_config.get("update_mode", "append")
 
-                adapter = QlibDataAdapter(interval=interval)
+                adapter = QlibDataAdapter(interval=interval, market="cn")
                 end_date = datetime.now()
                 start_date = end_date - timedelta(days=days)
 
                 self.data_sync_status["message"] = (
-                    f"正在从 Alpaca 获取 {len(symbols)} 只股票的数据..."
+                    f"正在从 AKShare 获取 {len(symbols)} 只股票的数据..."
                 )
                 self.data_sync_status["progress"] = 10
 

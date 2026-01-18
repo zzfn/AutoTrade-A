@@ -2,11 +2,13 @@
 
 ## Purpose
 
-AutoTrade 是一个基于 **LumiBot** 的量化交易自动化平台，专注于：
+AutoTrade-A 是一个基于 **LumiBot** 的 A 股量化预测平台，专注于：
 
-- 使用 LumiBot 框架开发和回测交易策略
-- 对接 **Alpaca** 券商进行美股模拟盘交易
-- 提供可复用的策略模板和风险管理工具
+- 使用机器学习模型进行 A 股市场预测
+- 提供回测功能验证策略有效性
+- 展示每日预测信号辅助投资决策
+
+**注意**: 本系统仅提供预测信号，不进行实际交易。
 
 ## Tech Stack
 
@@ -14,15 +16,28 @@ AutoTrade 是一个基于 **LumiBot** 的量化交易自动化平台，专注于
 
 - **Python 3.11+** - 主要开发语言
 - **uv** - 包管理与虚拟环境管理
-- **LumiBot** - 回测与算法交易框架（核心）
-- **Alpaca-py** - Alpaca 券商 API
+- **LumiBot** - 回测与策略框架（核心）
+
+### 数据源
+
+- **AKShare** - A 股历史数据（免费、无需 API）
+
+### 机器学习
+
+- **LightGBM** - 梯度提升模型
+- **Qlib** - 量化特征工程
 
 ### 数据与分析
 
-- **YFinance** - 历史数据获取（回测用）
 - **TA-Lib** - 技术分析指标
 - **Pandas** - 数据处理
 - **NumPy** - 数值计算
+
+### Web 框架
+
+- **FastAPI** - 后端 API
+- **Jinja2** - 模板渲染
+- **React** - 前端 UI
 
 ### 日志
 
@@ -43,32 +58,29 @@ AutoTrade 是一个基于 **LumiBot** 的量化交易自动化平台，专注于
 
 ### 命名规范
 
-- 策略类名：`PascalCase`，以 `Strategy` 结尾（如 `BuyAndHoldStrategy`）
+- 策略类名：`PascalCase`，以 `Strategy` 结尾（如 `QlibMLStrategy`）
 - 模块名：`snake_case`
 - 函数/变量：`snake_case`
 - 常量：`UPPER_SNAKE_CASE`
 
-### 策略开发规范
+### A 股代码规范
 
-1. 所有策略必须继承 LumiBot 的 `Strategy`
-2. 实现 `on_trading_iteration()` 方法
-3. 使用 `parameters` 字典定义可配置参数
-4. 先回测验证，再模拟盘测试，最后实盘
+- 格式: `6位数字.交易所`
+- 深圳: `.SZ` (如 `000001.SZ`)
+- 上海: `.SH` (如 `600000.SH`)
 
 ### Architecture Patterns
 
 - **策略模式**：每个交易策略是独立的类
-- **配置驱动**：API 密钥和参数通过环境变量和参数字典管理
+- **配置驱动**：参数通过配置文件和参数字典管理
 - **生命周期钩子**：
   - `initialize()` - 初始化
-  - `before_market_opens()` - 开盘前
   - `on_trading_iteration()` - 交易迭代（核心逻辑）
-  - `after_market_closes()` - 收盘后
 
 ### Testing Strategy
 
 - 策略必须通过历史回测验证
-- 模拟盘运行验证后才能上实盘
+- 使用 AKShare 数据进行回测
 
 ### Git Workflow
 
@@ -79,11 +91,19 @@ AutoTrade 是一个基于 **LumiBot** 的量化交易自动化平台，专注于
 
 ## Domain Context
 
+### A 股交易规则
+
+- **交易单位**: 最小 100 股（1 手）
+- **涨跌停限制**:
+  - 主板/中小板: ±10%
+  - 创业板(300xxx): ±20%
+  - 科创板(688xxx): ±20%
+- **ST 股票**: \*ST 表示退市风险警示，建议过滤
+- **交易时间**: 9:30-11:30, 13:00-15:00
+
 ### LumiBot 核心概念
 
 - **Strategy**: 策略类，包含交易逻辑
-- **Broker**: 券商接口（Alpaca）
-- **Trader**: 策略运行器
 - **Order**: 订单对象
 - **Position**: 持仓对象
 
@@ -91,55 +111,41 @@ AutoTrade 是一个基于 **LumiBot** 的量化交易自动化平台，专注于
 
 ```python
 # 获取价格
-price = self.get_last_price("AAPL")
+price = self.get_last_price("000001.SZ")
 
 # 获取投资组合信息
 self.portfolio_value  # 总价值
 self.cash             # 现金
 
 # 创建和提交订单
-order = self.create_order("AAPL", 10, "buy")
+order = self.create_order("000001.SZ", 100, "buy")
 self.submit_order(order)
 
 # 获取持仓
-position = self.get_position("AAPL")
+position = self.get_position("000001.SZ")
 positions = self.get_positions()
 ```
-
-### 美股交易时间
-
-- 常规交易：9:30 AM - 4:00 PM (ET)
-- 盘前：4:00 AM - 9:30 AM (ET)
-- 盘后：4:00 PM - 8:00 PM (ET)
 
 ## Important Constraints
 
 ### 技术约束
 
 - Python 代码必须使用 `uv run python` 执行
-- API 密钥存储在 `.env` 文件，禁止提交到 Git
 - 所有策略必须先通过回测
+- A 股数据仅支持日线频率
 
 ### 业务约束
 
-- 实盘前必须通过模拟盘验证
-- 必须设置止损机制
-- PDT 规则：25,000 美元以下账户每周限制 3 次日内交易
-
-### Alpaca 限制
-
-- API 速率限制：200 请求/分钟
-- 仅支持美股市场
-- Paper 账户和 Live 账户使用不同的 API 端点
+- **本系统仅提供预测信号，不进行实际交易**
+- 预测仅供参考，投资需谨慎
 
 ## External Dependencies
 
-### Alpaca Markets
+### AKShare
 
-- **官网**: https://alpaca.markets/
-- **API 文档**: https://docs.alpaca.markets/
-- 需要注册账户获取 API Key 和 Secret
-- 建议先使用 Paper Trading 账户测试
+- **文档**: https://akshare.akfamily.xyz/
+- **GitHub**: https://github.com/akfamily/akshare
+- 免费开源，无需 API Key
 
 ### LumiBot
 

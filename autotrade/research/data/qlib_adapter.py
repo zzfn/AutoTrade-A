@@ -1,9 +1,7 @@
 """
 Qlib 数据适配器 - 将数据转换为 Qlib 格式
 
-支持多市场：
-- 美股 (us): data/qlib/us/
-- A股 (cn): data/qlib/cn/
+AutoTrade-A 专用：仅支持 A 股 (cn) 市场
 """
 
 import os
@@ -21,21 +19,16 @@ from .providers import BaseDataProvider, DataProviderFactory
 
 class QlibDataAdapter:
     """
-    Qlib 数据适配器 - 支持多市场
+    Qlib 数据适配器 - A 股专用
 
     负责：
-    1. 从数据提供者获取原始数据
+    1. 从 AKShare 获取原始数据
     2. 转换为 Qlib 格式
-    3. 存储到 data/qlib/{market}/ 目录
+    3. 存储到 data/qlib/cn/ 目录
     4. 支持增量数据更新
 
     目录结构：
     data/qlib/
-    ├── us/           # 美股数据
-    │   └── 1d/
-    │       ├── instruments/
-    │       ├── features/
-    │       └── calendars/
     └── cn/           # A股数据
         └── 1d/
             ├── instruments/
@@ -48,10 +41,16 @@ class QlibDataAdapter:
         data_dir: str | Path = "data/qlib",
         provider: BaseDataProvider | None = None,
         interval: str = "1d",
-        market: str = "us",
+        market: str = "cn",
     ):
         self.interval = interval
         self.market = market.lower()
+        
+        # AutoTrade-A 仅支持 A 股
+        if self.market != "cn":
+            logger.warning(f"AutoTrade-A 仅支持 A 股市场，将 market={market} 改为 cn")
+            self.market = "cn"
+        
         self.base_dir = Path(data_dir)
 
         # 根据市场选择数据目录

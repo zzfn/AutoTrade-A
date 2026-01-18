@@ -9,7 +9,7 @@ dependencies = [
     "pyqlib",                    # 量化金融库
     "finrl",                     # 金融强化学习框架
     "lumibot",                   # 交易机器人框架
-    "alpaca-py>=0.43.2",         # Alpaca 交易所 API
+    # alpaca-py 已移除 - AutoTrade-A 仅支持 A 股
     "ta-lib>=0.6.8",             # 技术分析指标库
     # 机器学习框架
     "lightgbm",                  # LightGBM 梯度提升
