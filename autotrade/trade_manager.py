@@ -272,6 +272,7 @@ class TradeManager:
                             "score": float(pred_score),
                             "confidence": abs(float(pred_score)) * 100,
                             "date": latest_date.strftime("%Y-%m-%d"),
+                            "price": float(df.loc[(latest_date, symbol)]["close"]),
                         })
                 except Exception as e:
                     self.log(f"预测 {symbol} 失败: {e}")
