@@ -6,7 +6,6 @@ AutoTrade-A 专用：仅支持 A 股预测和回测
 
 import os
 import threading
-import yaml
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -15,6 +14,7 @@ import numpy as np
 import pandas as pd
 
 from autotrade.research.models import ModelManager
+from autotrade.shared.config.loader import default_config
 
 class TradeManager:
     _instance = None
@@ -271,18 +271,13 @@ class TradeManager:
                 }
     
     def _get_default_universe(self):
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        config_path = os.path.join(base_dir, "../configs/universe.yaml")
-        symbols = ["CSI300"]
+        """从配置文件读取默认股票池"""
         try:
-            if os.path.exists(config_path):
-                with open(config_path, "r") as f:
-                    config = yaml.safe_load(f)
-                    if config and "symbols" in config:
-                        symbols = config["symbols"]
+            if default_config:
+                return default_config.symbols
         except Exception as e:
             self.log(f"读取配置失败: {e}")
-        return symbols
+        return ["CSI300"]
 
     def run_backtest(self, params: dict):
         """Run a backtest using vectorbt in a separate thread."""
@@ -554,13 +549,8 @@ class TradeManager:
     def _get_universe_symbols(self) -> list[str]:
         """从配置文件读取默认股票池"""
         try:
-            base_dir = os.path.dirname(os.path.abspath(__file__))
-            config_path = os.path.join(base_dir, "../configs/universe.yaml")
-            if os.path.exists(config_path):
-                with open(config_path, "r") as f:
-                    config = yaml.safe_load(f)
-                    if config and "symbols" in config:
-                        return config["symbols"]
+            if default_config:
+                return default_config.symbols
         except Exception as e:
             self.log(f"读取 universe 配置失败: {e}")
         return ["CSI300"]
