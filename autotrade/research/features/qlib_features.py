@@ -74,7 +74,7 @@ class QlibFeatureGenerator(BaseFeatureGenerator):
             # 单股票
             return self._generate_single_symbol(df)
 
-    def _generate_single_symbol(self, df: pd.DataFrame) -> pd.DataFrame:
+    def _generate_single_symbol(self, df: pd.DataFrame, symbol: str = None) -> pd.DataFrame:
         """为单个股票生成特征"""
         features = {}
 
@@ -166,7 +166,11 @@ class QlibFeatureGenerator(BaseFeatureGenerator):
         if self.normalize:
             result = self._normalize_features(result)
 
-        logger.info(f"生成了 {len(result.columns)} 个特征")
+        log_msg = f"生成了 {len(result.columns)} 个特征"
+        if symbol:
+            log_msg = f"[{symbol}] {log_msg}"
+        logger.debug(log_msg)
+        
         return result
 
     def _generate_multi_symbol(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -175,6 +179,7 @@ class QlibFeatureGenerator(BaseFeatureGenerator):
 
         # 获取所有股票
         symbols = df.index.get_level_values("symbol").unique()
+        logger.info(f"开始为 {len(symbols)} 只股票生成特征...")
 
         for symbol in symbols:
             try:
@@ -182,7 +187,7 @@ class QlibFeatureGenerator(BaseFeatureGenerator):
                 symbol_df = df.xs(symbol, level="symbol")
 
                 # 生成特征
-                features = self._generate_single_symbol(symbol_df)
+                features = self._generate_single_symbol(symbol_df, symbol=symbol)
 
                 # 添加股票标识
                 features["symbol"] = symbol

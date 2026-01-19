@@ -11,11 +11,11 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
 from lumibot.backtesting import YahooDataBacktesting
 
 from autotrade.execution.strategies import QlibMLStrategy
 from autotrade.research.models import ModelManager
-
 
 class TradeManager:
     _instance = None
@@ -90,14 +90,65 @@ class TradeManager:
 
         return {"status": "ready", "message": "系统就绪，可使用预测和回测功能"}
 
-    def _resolve_symbols(self, symbols: list[str]) -> list[str]:
+    def _get_cache_path(self):
+        """获取缓存文件路径"""
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        cache_dir = os.path.join(base_dir, "data", "cache")
+        os.makedirs(cache_dir, exist_ok=True)
+        return os.path.join(cache_dir, "index_constituents.parquet")
+
+    def _load_disk_cache(self):
+        """从磁盘加载缓存 (Parquet)"""
+        try:
+            path = self._get_cache_path()
+            if os.path.exists(path):
+                df = pd.read_parquet(path)
+                if not df.empty and "index_code" in df.columns and "symbol" in df.columns:
+                    # Convert DataFrame back to dict: {'index_code': ['symbol1', ...]}
+                    return df.groupby('index_code')['symbol'].apply(list).to_dict()
+        except Exception as e:
+            self.log(f"读取缓存文件失败: {e}")
+        return {}
+
+    def _save_disk_cache(self, cache_data):
+        """保存缓存到磁盘 (Parquet)"""
+        try:
+            path = self._get_cache_path()
+            
+            # Convert dict to DataFrame
+            data_list = []
+            for index_code, symbols in cache_data.items():
+                for symbol in symbols:
+                    data_list.append({"index_code": index_code, "symbol": symbol})
+            
+            if data_list:
+                df = pd.DataFrame(data_list)
+                df.to_parquet(path, index=False)
+            else:
+                # Handle empty cache case properly if needed, or just don't save
+                pass
+                
+        except Exception as e:
+            self.log(f"写入缓存文件失败: {e}")
+
+    def _resolve_symbols(self, symbols: list[str], refresh: bool = False) -> list[str]:
         """
         解析股票代码，支持指数代码扩展（如 CSI300）
+        
+        Args:
+            symbols: 股票代码列表
+            refresh: 是否强制刷新缓存
         """
         if not symbols:
             return []
+            
+        # Initialize and load cache if needed
+        if not hasattr(self, "_index_constituents_cache") or self._index_constituents_cache is None:
+            self._index_constituents_cache = self._load_disk_cache()
 
         resolved = []
+        cache_updated = False
+        
         try:
             from autotrade.research.data.providers import DataProviderFactory
             # 获取 provider
@@ -106,21 +157,40 @@ class TradeManager:
             for s in symbols:
                 s_upper = s.upper().strip()
                 if s_upper in ["CSI300", "000300", "300", "HS300"]:
-                    if hasattr(provider, "get_index_constituents"):
+                    cache_key = "CSI300"
+                    if not refresh and cache_key in self._index_constituents_cache:
+                         resolved.extend(self._index_constituents_cache[cache_key])
+                         self.log(f"使用缓存获取 {cache_key} 成分股 ({len(self._index_constituents_cache[cache_key])} 只)")
+                    elif hasattr(provider, "get_index_constituents"):
                         self.log(f"正在获取沪深300成分股...")
                         cons = provider.get_index_constituents("000300")
                         self.log(f"已获取 {len(cons)} 只成分股")
+                        # Update cache
+                        self._index_constituents_cache[cache_key] = cons
+                        cache_updated = True
                         resolved.extend(cons)
                     else:
                         self.log("Provider 不支持 get_index_constituents")
                 elif s_upper in ["CSI500", "000905", "500", "ZZ500"]:
-                    if hasattr(provider, "get_index_constituents"):
+                    cache_key = "CSI500"
+                    if not refresh and cache_key in self._index_constituents_cache:
+                         resolved.extend(self._index_constituents_cache[cache_key])
+                         self.log(f"使用缓存获取 {cache_key} 成分股 ({len(self._index_constituents_cache[cache_key])} 只)")
+                    elif hasattr(provider, "get_index_constituents"):
                         self.log(f"正在获取中证500成分股...")
                         cons = provider.get_index_constituents("000905")
                         self.log(f"已获取 {len(cons)} 只成分股")
+                        # Update cache
+                        self._index_constituents_cache[cache_key] = cons
+                        cache_updated = True
                         resolved.extend(cons)
                 else:
                     resolved.append(s)
+                    
+            # Save to disk if updated
+            if cache_updated:
+                self._save_disk_cache(self._index_constituents_cache)
+                
         except Exception as e:
             self.log(f"解析股票代码失败: {e}")
             # Fallback to original
@@ -129,12 +199,13 @@ class TradeManager:
         # 去重
         return sorted(list(set(resolved)))
 
-    def get_latest_predictions(self, symbols: list[str] | None = None) -> dict:
+    def get_latest_predictions(self, symbols: list[str] | None = None, refresh: bool = False) -> dict:
         """
         获取最新的预测信号
 
         Args:
             symbols: 股票代码列表，如果为 None 则使用默认配置
+            refresh: 是否强制刷新缓存（如指数成分股）
 
         Returns:
             包含预测信号的字典
@@ -161,14 +232,12 @@ class TradeManager:
                     self.log(f"读取配置失败，使用默认股票列表: {e}")
 
             # 解析可能的指数代码
-            symbols = self._resolve_symbols(symbols)
+            symbols = self._resolve_symbols(symbols, refresh=refresh)
 
             # 2. 加载数据
             adapter = QlibDataAdapter(interval="1d", market="cn")
             end_date = datetime.now()
             start_date = end_date - timedelta(days=60)  # 获取60天数据用于特征计算
-
-            df = adapter.load_data(symbols, start_date, end_date)
 
             df = adapter.load_data(symbols, start_date, end_date)
 

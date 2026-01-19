@@ -10,10 +10,11 @@
     const [loadingPredictions, setLoadingPredictions] = useState(false);
 
     // 加载预测信号
-    const fetchPredictions = async () => {
+    const fetchPredictions = async (refresh = false) => {
       setLoadingPredictions(true);
       try {
-        const res = await fetch("/api/predict");
+        const url = refresh ? "/api/predict?refresh=true" : "/api/predict";
+        const res = await fetch(url);
         const data = await res.json();
         setPredictions(data);
       } catch (e) {
@@ -70,7 +71,7 @@
               )}
             </div>
             <button
-              onClick={fetchPredictions}
+              onClick={() => fetchPredictions(true)}
               disabled={loadingPredictions}
               className="px-3 py-1.5 bg-cyan-500/20 text-cyan-400 rounded-lg text-xs font-medium hover:bg-cyan-500/30 transition-colors disabled:opacity-50"
             >

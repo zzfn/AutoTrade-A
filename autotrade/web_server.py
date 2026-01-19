@@ -121,9 +121,9 @@ async def run_backtest(request: Request):
 
 
 @app.get("/api/predict")
-async def get_predictions():
+async def get_predictions(refresh: bool = False):
     """获取最新的预测信号"""
-    return tm.get_latest_predictions()
+    return tm.get_latest_predictions(refresh=refresh)
 
 
 @app.post("/api/predict")
@@ -132,7 +132,8 @@ async def get_predictions_with_symbols(request: Request):
     try:
         data = await request.json()
         symbols = data.get("symbols")
-        return tm.get_latest_predictions(symbols)
+        refresh = data.get("refresh", False)
+        return tm.get_latest_predictions(symbols, refresh=refresh)
     except Exception:
         return tm.get_latest_predictions()
 
