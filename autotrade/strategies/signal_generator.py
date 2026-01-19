@@ -6,9 +6,9 @@ import pandas as pd
 import numpy as np
 from loguru import logger
 
-from autotrade.research.data.providers import AKShareDataProvider
-from autotrade.research.features import QlibFeatureGenerator
-from autotrade.research.models import LightGBMTrainer, ModelManager
+from autotrade.data.providers import AKShareDataProvider
+from autotrade.features import QlibFeatureGenerator
+from autotrade.models import LightGBMTrainer, ModelManager
 
 
 class SignalGenerator:
@@ -25,7 +25,7 @@ class SignalGenerator:
         self,
         symbols: List[str],
         model_name: Optional[str] = None,
-        models_dir: str = "models",
+        models_dir: str = "artifacts/models",
         market: str = "us",
         lookback_period: int = 60,
         interval: str = "day",

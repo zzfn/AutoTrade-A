@@ -13,8 +13,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from autotrade.research.models import ModelManager
-from autotrade.shared.config.loader import default_config
+from autotrade.models import ModelManager
+from autotrade.common.config.loader import default_config
 
 class TradeManager:
     _instance = None
@@ -84,7 +84,7 @@ class TradeManager:
         Returns:
             实际的股票代码列表
         """
-        from autotrade.research.data.providers import DataProviderFactory
+        from autotrade.data import DataProviderFactory
 
         provider = DataProviderFactory.get_provider("cn")
         resolved = []
@@ -155,8 +155,8 @@ class TradeManager:
                     return cached
 
             try:
-                from autotrade.research.data import QlibDataAdapter
-                from autotrade.core.signal_generator import SignalGenerator
+                from autotrade.data import QlibDataAdapter
+                from autotrade.strategies.signal_generator import SignalGenerator
 
                 self.log("开始执行预测计算...")
 
@@ -286,9 +286,9 @@ class TradeManager:
             try:
                 self.log("Starting backtest (VectorBT)...")
 
-                from autotrade.core.signal_generator import SignalGenerator
-                from autotrade.backtesting.engine import BacktestEngine
-                from autotrade.research.data import QlibDataAdapter
+                from autotrade.strategies.signal_generator import SignalGenerator
+                from autotrade.backtest.engine import BacktestEngine
+                from autotrade.data import QlibDataAdapter
 
                 # 1. Parse dates and config
                 start_date = datetime.strptime(params.get("start_date", "2024-01-01"), "%Y-%m-%d")
@@ -439,6 +439,39 @@ class TradeManager:
         thread = threading.Thread(target=_backtest_task, daemon=True)
         thread.start()
         return {"status": "backtest_started"}
+
+    def initialize_and_start(self):
+        """
+        Initialize the system and start the default strategy/monitor.
+        For A-share prediction, this ensures models are loaded and schedules daily checks.
+        """
+        self.log("Initializing AutoTrade-A...")
+        
+        # In A-share mode, we might not have a continuous loop strategy like crypto.
+        # But we can start a scheduler or just ensure everything is ready.
+        # For compatibility with web_server, we'll mark it as running.
+        
+        if self.is_running:
+            self.log("Strategy is already running.")
+            return {"status": "running"}
+
+        # Define a simpler runner for A-shares that periodically updates or just sleeps/waits for commands
+        def _daily_runner():
+            import time
+            while self.is_running:
+                # Perform daily checks (e.g., is data updated?)
+                # For now, just a heartbeat
+                self.log("Heartbeat: System is active.")
+                
+                # Check for daily predictions if within market hours?
+                # ...
+                
+                for _ in range(3600): # Sleep 1 hour, check stop flag
+                    if not self.is_running: break
+                    time.sleep(1)
+        
+        return self.start_strategy(runner=_daily_runner)
+
 
     def start_strategy(self, runner=None):
         """Start the strategy in a separate thread and begin monitoring."""
@@ -616,9 +649,9 @@ class TradeManager:
 
         def _training_task():
             try:
-                from autotrade.research.data import QlibDataAdapter
-                from autotrade.research.features import QlibFeatureGenerator
-                from autotrade.research.models import LightGBMTrainer
+                from autotrade.data import QlibDataAdapter
+                from autotrade.features import QlibFeatureGenerator
+                from autotrade.models import LightGBMTrainer
 
                 self.training_status["in_progress"] = True
                 self.training_status["progress"] = 0

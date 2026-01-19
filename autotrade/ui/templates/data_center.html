@@ -1,0 +1,298 @@
+{% extends "layout.html" %} {% block content %}
+<div id="root">
+  <!-- React app will be mounted here -->
+  <div class="flex justify-center items-center h-64">
+    <div
+      class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-cyan-500"
+    ></div>
+  </div>
+</div>
+
+{% endblock %} {% block scripts %}
+<script type="text/babel">
+  {% raw %}
+  const { useState, useEffect } = React;
+
+  // Simple Icon Components to avoid external dependency issues
+  const IconActivity = ({ size = 20, className = "" }) => (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+    </svg>
+  );
+
+  const IconDatabase = ({ size = 20, className = "" }) => (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <ellipse cx="12" cy="5" rx="9" ry="3" />
+      <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
+      <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
+    </svg>
+  );
+
+  const IconRefreshCw = ({ size = 20, className = "" }) => (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <path d="M23 4v6h-6" />
+      <path d="M1 20v-6h6" />
+      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+    </svg>
+  );
+
+  const IconClock = ({ size = 20, className = "" }) => (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <circle cx="12" cy="12" r="10" />
+      <polyline points="12 6 12 12 16 14" />
+    </svg>
+  );
+
+  function DataCenter() {
+    const [syncStatus, setSyncStatus] = useState(null);
+    const [loading, setLoading] = useState(false);
+    const [config, setConfig] = useState({
+      symbols: "CSI300",
+      days: 365,
+      interval: "1d",
+    });
+
+    const updateStatus = (status) => {
+      if (!status) return;
+      setSyncStatus(status);
+      setLoading(status.in_progress);
+    };
+
+    useEffect(() => {
+      const connectWebSocket = () => {
+        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+        const ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
+
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (data.data_sync_status) {
+              updateStatus(data.data_sync_status);
+            }
+          } catch (e) {
+            console.error("WS Error:", e);
+          }
+        };
+
+        ws.onclose = () => {
+          setTimeout(connectWebSocket, 5000);
+        };
+      };
+      connectWebSocket();
+    }, []);
+
+    const startSync = async () => {
+      try {
+        setLoading(true);
+        const response = await fetch("/api/data/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            symbols: config.symbols.split(",").map((s) => s.trim()),
+            days: parseInt(config.days),
+            interval: config.interval,
+          }),
+        });
+        const data = await response.json();
+        if (data.status === "error") {
+          alert(data.message);
+          setLoading(false);
+        }
+      } catch (error) {
+        console.error("Sync failed:", error);
+        setLoading(false);
+      }
+    };
+
+    return (
+      <div className="space-y-6">
+        <div className="glass p-6 rounded-2xl">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-indigo-500/20 flex items-center justify-center text-indigo-400">
+                <IconDatabase size={20} />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-white">数据中心</h2>
+                <p className="text-slate-400 text-sm">管理市场数据同步与缓存</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Config Panel */}
+            <div className="p-4 rounded-xl bg-slate-800/50 border border-slate-700">
+              <h3 className="font-semibold mb-4 text-cyan-400 flex items-center gap-2">
+                <IconActivity size={16} /> 数据同步配置
+              </h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm text-slate-400 mb-1">
+                    股票池 / 标的代码
+                  </label>
+                  <input
+                    type="text"
+                    value={config.symbols}
+                    onChange={(e) =>
+                      setConfig({ ...config, symbols: e.target.value })
+                    }
+                    className="w-full h-10 px-3 rounded-lg text-sm bg-slate-900/50 border border-slate-700 focus:border-cyan-500 transition-colors"
+                    placeholder="例如: CSI300, 000001.SZ"
+                  />
+                  <p className="text-xs text-slate-500 mt-1">
+                    支持输入具体代码或指数 (如 CSI300, SSE50)
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm text-slate-400 mb-1">
+                      同步天数
+                    </label>
+                    <input
+                      type="number"
+                      value={config.days}
+                      onChange={(e) =>
+                        setConfig({ ...config, days: e.target.value })
+                      }
+                      className="w-full h-10 px-3 rounded-lg text-sm bg-slate-900/50 border border-slate-700 focus:border-cyan-500 transition-colors"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-slate-400 mb-1">
+                      数据频率
+                    </label>
+                    <select
+                      value={config.interval}
+                      onChange={(e) =>
+                        setConfig({ ...config, interval: e.target.value })
+                      }
+                      className="w-full h-10 px-3 rounded-lg text-sm bg-slate-900/50 border border-slate-700 focus:border-cyan-500 transition-colors"
+                    >
+                      <option value="1d">日线 (1d)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <button
+                  onClick={startSync}
+                  disabled={loading}
+                  className={`w-full py-2.5 rounded-lg font-medium transition-all ${
+                    loading
+                      ? "bg-slate-700 text-slate-500 cursor-not-allowed"
+                      : "bg-cyan-500 hover:bg-cyan-400 text-slate-900 shadow-lg shadow-cyan-500/20"
+                  }`}
+                >
+                  {loading ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <IconRefreshCw className="animate-spin" size={16} />{" "}
+                      同步中...
+                    </span>
+                  ) : (
+                    <span className="flex items-center justify-center gap-2">
+                      <IconRefreshCw size={16} /> 开始同步
+                    </span>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* Status Panel */}
+            <div className="p-4 rounded-xl bg-slate-800/50 border border-slate-700">
+              <h3 className="font-semibold mb-4 text-cyan-400 flex items-center gap-2">
+                <IconClock size={16} /> 同步状态
+              </h3>
+
+              {syncStatus ? (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">当前状态</span>
+                    <span
+                      className={`px-2 py-1 rounded text-xs font-medium ${
+                        syncStatus.in_progress
+                          ? "bg-amber-500/20 text-amber-400"
+                          : "bg-emerald-500/20 text-emerald-400"
+                      }`}
+                    >
+                      {syncStatus.in_progress ? "进行中" : "空闲"}
+                    </span>
+                  </div>
+
+                  <div>
+                    <div className="flex justify-between text-xs mb-1">
+                      <span className="text-slate-400">进度</span>
+                      <span className="text-cyan-400">
+                        {syncStatus.progress}%
+                      </span>
+                    </div>
+                    <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-cyan-500 transition-all duration-500 ease-out"
+                        style={{ width: `${syncStatus.progress}%` }}
+                      ></div>
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-900/50 p-3 rounded-lg border border-slate-700/50">
+                    <p className="text-sm font-mono text-slate-300">
+                      {syncStatus.message || "准备就绪"}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-8 text-slate-500">
+                  等待状态数据...
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const root = ReactDOM.createRoot(document.getElementById("root"));
+  root.render(<DataCenter />);
+  {% endraw %}
+</script>
+{% endblock %}

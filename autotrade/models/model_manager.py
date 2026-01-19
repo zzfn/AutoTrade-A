@@ -228,7 +228,7 @@ class ModelManager:
 
 def get_model_manager() -> ModelManager:
     """获取全局模型管理器实例"""
-    # 使用项目根目录下的 models 目录
-    base_dir = Path(__file__).parent.parent.parent.parent
-    models_dir = base_dir / "models"
+    # 使用项目根目录下的 artifacts/models 目录
+    base_dir = Path(__file__).parent.parent.parent
+    models_dir = base_dir / "artifacts" / "models"
     return ModelManager(models_dir)

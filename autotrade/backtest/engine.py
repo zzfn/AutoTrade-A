@@ -4,7 +4,7 @@ import vectorbt as vbt
 from loguru import logger
 from typing import Optional, Dict, Any
 
-from autotrade.core.signal_generator import SignalGenerator
+from autotrade.strategies.signal_generator import SignalGenerator
 
 class BacktestEngine:
     """

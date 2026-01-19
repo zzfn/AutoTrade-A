@@ -39,7 +39,7 @@ class ModelTrainer(ABC):
 
     def __init__(
         self,
-        model_dir: str | Path = "models",
+        model_dir: str | Path = "artifacts/models",
         model_name: str = "model",
     ):
         self.model_dir = Path(model_dir)

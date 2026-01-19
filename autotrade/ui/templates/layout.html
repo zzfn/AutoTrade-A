@@ -4,6 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AutoTrade</title>
+    <link
+      href="https://unpkg.com/@fortawesome/fontawesome-free@6.5.1/css/all.min.css"
+      rel="stylesheet"
+    />
     <script src="https://cdn.tailwindcss.com"></script>
     <script
       crossorigin
@@ -14,7 +18,6 @@
       src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"
     ></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
     <style>
       body {
         background-color: #0f172a;
@@ -68,6 +71,11 @@
             href="/"
             class="hover:text-cyan-400 transition-colors flex items-center gap-1"
             >仪表盘</a
+          >
+          <a
+            href="/data"
+            class="hover:text-cyan-400 transition-colors flex items-center gap-1"
+            >数据中心</a
           >
           <a
             href="/models"

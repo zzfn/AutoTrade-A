@@ -2,7 +2,7 @@
 
 ## Purpose
 
-AutoTrade-A 是一个基于 **LumiBot** 的 A 股量化预测平台，专注于：
+AutoTrade-A 是一个基于 **VectorBT** 的 A 股量化预测平台，专注于：
 
 - 使用机器学习模型进行 A 股市场预测
 - 提供回测功能验证策略有效性
@@ -16,7 +16,7 @@ AutoTrade-A 是一个基于 **LumiBot** 的 A 股量化预测平台，专注于�
 
 - **Python 3.11+** - 主要开发语言
 - **uv** - 包管理与虚拟环境管理
-- **LumiBot** - 回测与策略框架（核心）
+- **VectorBT** - 向量化回测与策略框架（核心）
 
 ### 数据源
 
@@ -75,7 +75,7 @@ AutoTrade-A 是一个基于 **LumiBot** 的 A 股量化预测平台，专注于�
 - **配置驱动**：参数通过配置文件和参数字典管理
 - **生命周期钩子**：
   - `initialize()` - 初始化
-  - `on_trading_iteration()` - 交易迭代（核心逻辑）
+  - `next()` - 信号生成逻辑 (VectorBT style)
 
 ### Testing Strategy
 
@@ -101,29 +101,25 @@ AutoTrade-A 是一个基于 **LumiBot** 的 A 股量化预测平台，专注于�
 - **ST 股票**: \*ST 表示退市风险警示，建议过滤
 - **交易时间**: 9:30-11:30, 13:00-15:00
 
-### LumiBot 核心概念
+### VectorBT 核心概念
 
-- **Strategy**: 策略类，包含交易逻辑
-- **Order**: 订单对象
-- **Position**: 持仓对象
+- **Portfolio**: 投资组合对象，包含回测结果
+- **Signals**: 信号矩阵 (Entries/Exits)
+- **IndicatorFactory**: 指标构建工厂
 
 ### LumiBot 常用方法
 
 ```python
-# 获取价格
-price = self.get_last_price("000001.SZ")
+# 生成信号
+entries = close > ma
+exits = close < ma
 
-# 获取投资组合信息
-self.portfolio_value  # 总价值
-self.cash             # 现金
+# 运行回测
+portfolio = vbt.Portfolio.from_signals(close, entries, exits)
 
-# 创建和提交订单
-order = self.create_order("000001.SZ", 100, "buy")
-self.submit_order(order)
-
-# 获取持仓
-position = self.get_position("000001.SZ")
-positions = self.get_positions()
+# 获取统计
+stats = portfolio.stats()
+portfolio.plot().show()
 ```
 
 ## Important Constraints
@@ -147,8 +143,8 @@ positions = self.get_positions()
 - **GitHub**: https://github.com/akfamily/akshare
 - 免费开源，无需 API Key
 
-### LumiBot
+### VectorBT
 
-- **文档**: https://lumibot.lumiwealth.com/
-- **GitHub**: https://github.com/Lumiwealth/lumibot
-- **示例策略**: https://github.com/Lumiwealth/lumibot/tree/dev/lumibot/example_strategies
+- **文档**: https://vectorbt.dev/
+- **GitHub**: https://github.com/polakowo/vectorbt
+- **Cookbook**: https://vectorbt.dev/api/portfolio/base/

@@ -111,6 +111,12 @@ async def read_backtest(request: Request):
     return templates.TemplateResponse(request, "backtest.html")
 
 
+@app.get("/data", response_class=HTMLResponse)
+async def read_data_center(request: Request):
+    """数据中心页面"""
+    return templates.TemplateResponse(request, "data_center.html")
+
+
 @app.post("/api/run_backtest")
 async def run_backtest(request: Request):
     params = await request.json()

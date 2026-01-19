@@ -13,7 +13,7 @@ import akshare as ak
 import pandas as pd
 from loguru import logger
 
-from autotrade.research.data.cache import ParquetCache
+from autotrade.data.cache import ParquetCache
 
 
 class BaseDataProvider(ABC):
