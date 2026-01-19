@@ -184,7 +184,8 @@ class AKShareDataProvider(BaseDataProvider):
                         else:
                             logger.debug(f"{symbol} 包含今日且非收盘后，刷新今日数据")
                     else:
-                        logger.debug(f"{symbol} 缓存范围不全: {cache_min.date()}~{cache_max.date()}")
+                        logger.info(f"{symbol} 缓存未覆盖请求范围 | 请求: {req_start.date()}~{req_end.date()} | 缓存: {cache_min.date()}~{cache_max.date()}")
+
 
                 # 3. 执行网络获取
                 if needs_fetch:

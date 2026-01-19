@@ -228,11 +228,14 @@ class QlibFeatureGenerator(BaseFeatureGenerator):
         elif self.fill_method == "mean":
             df = df.fillna(df.mean())
 
-        # 仍然有 NaN 的用 0 填充
+        # 再次确保所有 NaN 被填充
         df = df.fillna(0)
 
-        # 替换无穷值
+        # 替换无穷大/小值
         df = df.replace([np.inf, -np.inf], 0)
+        
+        # 再次裁减极值，防止溢出导致后续计算异常
+        df = df.clip(lower=-1e8, upper=1e8)
 
         return df
 

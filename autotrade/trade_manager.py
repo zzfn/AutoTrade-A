@@ -205,18 +205,51 @@ class TradeManager:
                 with open(model_path, "rb") as f:
                     model = pickle.load(f)
 
+                # 获取股票名称映射
                 stock_names = adapter.provider.get_stock_names(symbols)
 
+                # 获取每只股票最新的特征
                 predictions = []
-                latest_date = features.index.get_level_values(0).max()
+                
+                # 获取全局最新日期，作为参考
+                latest_global_date = features.index.get_level_values(0).max()
 
                 for symbol in symbols:
                     try:
-                        if (latest_date, symbol) in features.index:
-                            symbol_features = features.loc[(latest_date, symbol)]
+                        target_date = latest_global_date
+                        
+                        # 1. 检查该股票在全局最新日期是否有数据
+                        if (target_date, symbol) not in features.index:
+                            # 2. 如果没有，检查该股票是否有任何数据
+                            if symbol in features.index.get_level_values("symbol"):
+                                # 获取该股票的最新日期
+                                symbol_dates = features.xs(symbol, level="symbol").index
+                                if not symbol_dates.empty:
+                                    target_date = symbol_dates.max()
+                                    # 如果距离全局最新日期太久（超过10天），标记为停牌/无数据
+                                    # 这里可以根据需要调整逻辑
+                                    pass
+                            else:
+                                # 完全无数据
+                                predictions.append({
+                                    "symbol": symbol,
+                                    "name": stock_names.get(symbol, symbol),
+                                    "signal": "NODATA",
+                                    "score": 0.0,
+                                    "confidence": 0.0,
+                                    "date": latest_global_date.strftime("%Y-%m-%d"),
+                                    "price": 0.0,
+                                    "message": "暂无数据"
+                                })
+                                continue
+
+                        # 获取特征并预测
+                        if (target_date, symbol) in features.index:
+                            symbol_features = features.loc[(target_date, symbol)]
                             X = symbol_features.values.reshape(1, -1)
                             pred_score = model.predict(X)[0]
 
+                            # 转换为信号
                             if pred_score > 0.01:
                                 signal = "BUY"
                             elif pred_score < -0.01:
@@ -224,20 +257,49 @@ class TradeManager:
                             else:
                                 signal = "HOLD"
 
+                            # 检查是否停牌 (如果数据日期早于全局最新日期)
+                            message = ""
+                            if target_date < latest_global_date:
+                                signal = "SUSPENDED"
+                                message = f"停牌/数据延迟 ({target_date.strftime('%Y-%m-%d')})"
+
                             predictions.append({
                                 "symbol": symbol,
                                 "name": stock_names.get(symbol, symbol),
                                 "signal": signal,
                                 "score": float(pred_score),
                                 "confidence": abs(float(pred_score)) * 100,
-                                "date": latest_date.strftime("%Y-%m-%d"),
-                                "price": float(df.loc[(latest_date, symbol)]["close"]),
+                                "date": target_date.strftime("%Y-%m-%d"),
+                                "price": float(df.loc[(target_date, symbol)]["close"]),
+                                "message": message,
                             })
-                    except Exception as e:
-                        # Log less frequently or just summary to avoid spam
-                        pass
+                        else:
+                             predictions.append({
+                                "symbol": symbol,
+                                "name": stock_names.get(symbol, symbol),
+                                "signal": "NODATA",
+                                "score": 0.0,
+                                "confidence": 0.0,
+                                "date": latest_global_date.strftime("%Y-%m-%d"),
+                                "price": 0.0,
+                                "message": "无法获取特征"
+                            })
 
-                predictions.sort(key=lambda x: x["score"], reverse=True)
+                    except Exception as e:
+                        self.log(f"预测 {symbol} 失败: {e}")
+                        predictions.append({
+                            "symbol": symbol,
+                            "name": stock_names.get(symbol, symbol),
+                            "signal": "ERROR",
+                            "score": 0.0,
+                            "confidence": 0.0,
+                            "date": latest_global_date.strftime("%Y-%m-%d"),
+                            "price": 0.0,
+                            "message": str(e)
+                        })
+
+                # 按得分排序，将 ERROR/NODATA 排在最后
+                predictions.sort(key=lambda x: (x["signal"] in ["BUY", "SELL", "HOLD", "SUSPENDED"], x["score"]), reverse=True)
 
                 self.log(f"预测完成: {len(predictions)} 只股票")
 
@@ -351,7 +413,17 @@ class TradeManager:
                 s_upper = s.upper().strip()
                 if s_upper in ["CSI300", "000300", "300", "HS300"]:
                     cache_key = "CSI300"
+                    
+                    # Check cache first
+                    use_cache = False
                     if not refresh and cache_key in self._index_constituents_cache:
+                        cached_count = len(self._index_constituents_cache[cache_key])
+                        if cached_count >= 290:
+                            use_cache = True
+                        else:
+                            self.log(f"缓存中 {cache_key} 成分股数量不足 ({cached_count} < 290)，强制刷新...")
+
+                    if use_cache:
                          resolved.extend(self._index_constituents_cache[cache_key])
                          self.log(f"使用缓存获取 {cache_key} 成分股 ({len(self._index_constituents_cache[cache_key])} 只)")
                     elif hasattr(provider, "get_index_constituents"):
@@ -644,10 +716,10 @@ class TradeManager:
 
                 # 1. Parse dates
                 backtesting_start = datetime.strptime(
-                    params.get("start_date", "2023-01-01"), "%Y-%m-%d"
+                    params.get("start_date", "2024-01-01"), "%Y-%m-%d"
                 )
                 backtesting_end = datetime.strptime(
-                    params.get("end_date", "2023-01-31"), "%Y-%m-%d"
+                    params.get("end_date", "2025-12-31"), "%Y-%m-%d"
                 )
 
                 # 2. Parse symbols (clean up quotes and spaces)
@@ -940,23 +1012,31 @@ class TradeManager:
                 target_horizon = train_config.get("target_horizon", 5)
                 interval = "1d"  # A 股仅支持日线
 
+                # 固定时间段配置
+                train_start_str = "2010-01-01"
+                valid_start_str = "2022-01-01"
+                valid_end_str = "2023-12-31"
+
                 # 1. 加载数据 (20%)
                 self.training_status["progress"] = 10
                 self.training_status["message"] = f"加载数据 ({interval})..."
 
                 adapter = QlibDataAdapter(interval=interval, market="cn")
-                end_date = datetime.now()
-                start_date = end_date - timedelta(days=train_days + 60)
+                
+                # 数据加载结束时间为验证集结束时间
+                end_date_obj = datetime.strptime(valid_end_str, "%Y-%m-%d")
+                # 数据加载开始时间为训练集开始时间 - 60天 (warmup)
+                start_date_obj = datetime.strptime(train_start_str, "%Y-%m-%d") - timedelta(days=60)
 
                 # 尝试获取新数据
                 try:
                     adapter.fetch_and_store(
-                        symbols, start_date, end_date, update_mode="append"
+                        symbols, start_date_obj, end_date_obj, update_mode="append"
                     )
                 except Exception as e:
                     self.log(f"获取新数据失败（将使用现有数据）: {e}")
 
-                df = adapter.load_data(symbols, start_date, end_date)
+                df = adapter.load_data(symbols, start_date_obj, end_date_obj)
                 self.training_status["progress"] = 20
 
                 if df.empty:
@@ -995,10 +1075,20 @@ class TradeManager:
                 # 4. 训练模型 (80%)
                 self.training_status["message"] = "训练模型..."
 
-                # 分割训练/验证集 (80/20)
-                split_idx = int(len(features) * 0.8)
-                X_train, X_valid = features.iloc[:split_idx], features.iloc[split_idx:]
-                y_train, y_valid = target.iloc[:split_idx], target.iloc[split_idx:]
+                # 分割训练/验证集 (按日期切分)
+                split_date = datetime.strptime(valid_start_str, "%Y-%m-%d")
+                
+                # features index 是 (date, symbol) MultiIndex
+                dates = features.index.get_level_values(0)
+                
+                train_mask = dates < split_date
+                valid_mask = (dates >= split_date) & (dates <= end_date_obj)
+                
+                X_train = features.loc[train_mask]
+                y_train = target.loc[train_mask]
+                
+                X_valid = features.loc[valid_mask]
+                y_valid = target.loc[valid_mask]
 
                 trainer = LightGBMTrainer(
                     model_name="lightgbm_rolling",
@@ -1013,7 +1103,9 @@ class TradeManager:
                 trainer.metadata.update(
                     {
                         "symbols": symbols,
-                        "train_days": train_days,
+                        "train_start_date": train_start_str,
+                        "valid_start_date": valid_start_str,
+                        "valid_end_date": valid_end_str,
                         "interval": interval,
                         "market": "cn",
                         "ic": metrics["ic"],
