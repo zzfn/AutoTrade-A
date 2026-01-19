@@ -28,10 +28,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import pandas as pd
 from loguru import logger
 
-from autotrade.research.data import QlibDataAdapter
-from autotrade.research.features import QlibFeatureGenerator
-from autotrade.research.models import LightGBMTrainer, ModelManager
-from autotrade.research.models.trainer import WalkForwardValidator
+from autotrade.data import QlibDataAdapter
+from autotrade.features import QlibFeatureGenerator
+from autotrade.models import LightGBMTrainer, ModelManager
+from autotrade.models.trainer import WalkForwardValidator
 
 
 def parse_args():

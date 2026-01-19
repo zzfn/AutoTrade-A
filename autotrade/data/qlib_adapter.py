@@ -356,18 +356,34 @@ class QlibDataAdapter:
             return []
         return [d.name for d in self.features_dir.iterdir() if d.is_dir()]
 
-    def get_date_range(self, symbol: str) -> tuple[datetime, datetime] | None:
-        """获取某只股票的数据日期范围"""
+    def get_symbol_info(self, symbol: str) -> dict | None:
+        """
+        获取某只股票的数据元信息
+        
+        Returns:
+            {
+                "start_date": datetime,
+                "end_date": datetime,
+                "count": int
+            }
+        """
         symbol_dir = self.features_dir / symbol
         dates_file = symbol_dir / "_dates.pkl"
 
         if not dates_file.exists():
             return None
 
-        with open(dates_file, "rb") as f:
-            dates = pickle.load(f)
+        try:
+            with open(dates_file, "rb") as f:
+                dates = pickle.load(f)
 
-        if not dates:
+            if not dates:
+                return None
+
+            return {
+                "start_date": pd.to_datetime(min(dates)),
+                "end_date": pd.to_datetime(max(dates)),
+                "count": len(dates)
+            }
+        except Exception:
             return None
-
-        return (pd.to_datetime(min(dates)), pd.to_datetime(max(dates)))

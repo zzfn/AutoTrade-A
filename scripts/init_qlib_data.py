@@ -16,7 +16,7 @@ from pathlib import Path
 # 确保可以导入项目模块
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from autotrade.research.data import QlibDataAdapter
+from autotrade.data import QlibDataAdapter
 from loguru import logger
 
 

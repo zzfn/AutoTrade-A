@@ -238,6 +238,15 @@ async def start_data_sync(request: Request):
 async def get_data_sync_status():
     """获取数据同步状态"""
     return tm.get_data_sync_status()
+@app.get("/api/data/inventory")
+async def get_data_inventory():
+    """获取数据中心库存详情"""
+    try:
+        # Run in threadpool to avoid blocking event loop
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, tm.get_data_inventory)
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 # ==================== 模型管理页面 ====================

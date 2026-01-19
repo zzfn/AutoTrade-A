@@ -23,8 +23,8 @@ from tqdm import tqdm
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from autotrade.research.data.providers import AKShareDataProvider
-from autotrade.research.data.qlib_adapter import QlibDataAdapter
+from autotrade.data.providers import AKShareDataProvider
+from autotrade.data.qlib_adapter import QlibDataAdapter
 
 
 def load_universe_config(config_path: Path) -> list[str]:

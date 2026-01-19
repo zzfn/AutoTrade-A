@@ -814,56 +814,151 @@ class TradeManager:
         if self.data_sync_status["in_progress"]:
             return {"status": "error", "message": "数据同步已在进行中"}
 
+        # 默认配置
+        sync_config = config or {}
+        
+        # 支持单个 symbol 更新
+        symbols = sync_config.get("symbols")
+        if not symbols:
+             # 如果未提供，使用默认 universe
+            symbols = self._get_universe_symbols()
+        
+        # 如果是字符串，转为列表
+        if isinstance(symbols, str):
+            symbols = [s.strip() for s in symbols.split(",")]
+
+        days = int(sync_config.get("days", 365))
+        interval = sync_config.get("interval", "1d")
+        
+        # 解析指数
+        target_symbols = self._resolve_symbols(symbols)
+
         def _data_sync_task():
             try:
-                from autotrade.research.data import QlibDataAdapter
+                from autotrade.data import QlibDataAdapter
 
                 self.data_sync_status["in_progress"] = True
                 self.data_sync_status["progress"] = 0
-                self.data_sync_status["message"] = "准备同步数据..."
-                self.log("开始数据同步")
-
-                sync_config = config or {}
-                symbols = sync_config.get("symbols")
-                if not symbols:
-                    symbols = self._get_universe_symbols()
-                
-                # Resolve symbols
-                symbols = self._resolve_symbols(symbols)
-
-                days = sync_config.get("days", 365)
-                interval = "1d"  # A 股仅支持日线
-                update_mode = sync_config.get("update_mode", "append")
+                self.data_sync_status["message"] = "准备同步..."
+                self.log(f"开始数据同步: {len(target_symbols)} 只股票")
 
                 adapter = QlibDataAdapter(interval=interval, market="cn")
                 end_date = datetime.now()
                 start_date = end_date - timedelta(days=days)
 
-                self.data_sync_status["message"] = (
-                    f"正在从 AKShare 获取 {len(symbols)} 只股票的数据..."
-                )
-                self.data_sync_status["progress"] = 10
+                # 分批处理以更新进度
+                batch_size = 10
+                total_batches = (len(target_symbols) + batch_size - 1) // batch_size
 
-                adapter.fetch_and_store(
-                    symbols, start_date, end_date, update_mode=update_mode
-                )
+                for i in range(total_batches):
+                    batch_symbols = target_symbols[i * batch_size : (i + 1) * batch_size]
+                    
+                    self.data_sync_status["message"] = f"正在同步 ({i+1}/{total_batches}): {batch_symbols[0]}..."
+                    adapter.fetch_and_store(
+                        batch_symbols, start_date, end_date, update_mode="append"
+                    )
+                    
+                    progress = int(((i + 1) / total_batches) * 100)
+                    self.data_sync_status["progress"] = progress
 
+                self.data_sync_status["message"] = "同步完成"
                 self.data_sync_status["progress"] = 100
-                self.data_sync_status["message"] = (
-                    f"成功同步 {len(symbols)} 只股票的数据 ({interval})"
-                )
-                self.log(f"数据同步完成: {len(symbols)} symbols")
+                self.state["_last_data_check"] = datetime.now().isoformat()
+                self.log("数据同步完成")
 
             except Exception as e:
-                self.data_sync_status["message"] = f"同步失败: {e}"
+                import traceback
+                self.data_sync_status["message"] = f"错误: {e}"
                 self.log(f"数据同步失败: {e}")
+                traceback.print_exc()
             finally:
                 self.data_sync_status["in_progress"] = False
 
         thread = threading.Thread(target=_data_sync_task, daemon=True)
         thread.start()
+        return {"status": "success", "message": "数据同步已启动"}
 
-        return {"status": "started", "message": "数据同步已启动"}
+    def get_data_inventory(self) -> dict:
+        """
+        获取数据中心库存详情
+        """
+        try:
+            from autotrade.data import QlibDataAdapter, DataProviderFactory
+            
+            # 1. 获取配置的股票
+            configured_symbols = self._get_universe_symbols()
+            # 解析指数
+            resolved_configured = self._resolve_symbols(configured_symbols)
+            resolved_configured_set = set(resolved_configured)
+            
+            # 2. 初始化适配器
+            adapter = QlibDataAdapter(interval="1d", market="cn")
+            available_symbols = adapter.get_available_symbols()
+            
+            # 3. 合并所有涉及的股票
+            all_symbols = list(set(resolved_configured + available_symbols))
+            
+            # 4. 获取名称
+            name_map = {}
+            try:
+                # 尝试获取名称，仅针对本次显示的股票
+                # 为了防止太慢，这里可以做一个简单的缓存或者优化
+                pass 
+                # provider = DataProviderFactory.get_provider("cn")
+                # name_map = provider.get_stock_names(all_symbols)
+                # 上面这行如果 symbol 太多可能会卡，暂时略过，或者由前端显示代码
+            except Exception:
+                pass
+            
+            inventory = []
+            now_date = datetime.now().date()
+            
+            for symbol in all_symbols:
+                item = {
+                    "symbol": symbol,
+                    "name": name_map.get(symbol, symbol),
+                    "is_configured": symbol in resolved_configured_set,
+                    "has_data": False,
+                    "start_date": "-",
+                    "end_date": "-",
+                    "count": 0,
+                    "status": "missing", # missing, outdated, fresh
+                    "last_update": "-"
+                }
+                
+                info = adapter.get_symbol_info(symbol)
+                if info:
+                    item["has_data"] = True
+                    item["start_date"] = info["start_date"].strftime("%Y-%m-%d")
+                    item["end_date"] = info["end_date"].strftime("%Y-%m-%d")
+                    item["last_update"] = info["end_date"].strftime("%Y-%m-%d")
+                    item["count"] = info["count"]
+                    
+                    # Check freshness
+                    end_date = info["end_date"].date()
+                    days_diff = (now_date - end_date).days
+                    if days_diff <= 3: 
+                        item["status"] = "fresh"
+                    else:
+                        item["status"] = "outdated"
+                
+                inventory.append(item)
+                
+            # Sort: Configured first, then by Symbol
+            inventory.sort(key=lambda x: (not x["is_configured"], x["symbol"]))
+            
+            return {
+                "status": "success",
+                "inventory": inventory,
+                "configured_count": len(resolved_configured),
+                "total_count": len(inventory)
+            }
+            
+        except Exception as e:
+            self.log(f"获取数据详情失败: {e}")
+            import traceback
+            traceback.print_exc()
+            return {"status": "error", "message": str(e)}
 
     def get_data_sync_status(self) -> dict:
         """获取数据同步状态"""
