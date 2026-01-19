@@ -562,15 +562,9 @@ class TradeManager:
                     params.get("end_date", "2025-12-31"), "%Y-%m-%d"
                 )
 
-                # 2. Parse symbols (clean up quotes and spaces)
-                symbol_input = params.get("symbol", "CSI300")
-                symbols = [
-                    s.strip().replace('"', "").replace("'", "")
-                    for s in symbol_input.split(",")
-                    if s.strip()
-                ]
-                if not symbols:
-                    symbols = ["CSI300"]
+                # 2. Parse symbols - Always use configured symbols from universe.yaml
+                symbols = self._get_universe_symbols()
+                self.log(f"使用配置的股票池: {symbols}")
 
                 # Resolve symbols (handle CSI300 etc.)
                 symbols = self._resolve_symbols(symbols)
