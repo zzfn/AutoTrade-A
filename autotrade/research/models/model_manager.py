@@ -148,6 +148,7 @@ class ModelManager:
 
     def get_current_model(self) -> Optional[str]:
         """获取当前使用的模型名称"""
+        self._load_config()
         return self._current_model
 
     def get_current_model_path(self) -> Optional[Path]:

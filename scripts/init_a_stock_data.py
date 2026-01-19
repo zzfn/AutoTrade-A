@@ -28,7 +28,10 @@ from autotrade.research.data.qlib_adapter import QlibDataAdapter
 
 
 def load_universe_config(config_path: Path) -> list[str]:
-    """从配置文件加载A股股票池"""
+    """从配置文件加载A股股票池
+    
+    优先读取 symbols，如果没有则 fallback 到 cn_stocks
+    """
     if not config_path.exists():
         logger.warning(f"配置文件不存在: {config_path}")
         return []
@@ -36,7 +39,8 @@ def load_universe_config(config_path: Path) -> list[str]:
     with open(config_path) as f:
         config = yaml.safe_load(f)
 
-    return config.get("cn_stocks", [])
+    # 优先读取 symbols，fallback 到 cn_stocks
+    return config.get("symbols", config.get("cn_stocks", []))
 
 
 def main():

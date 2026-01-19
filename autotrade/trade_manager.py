@@ -91,11 +91,17 @@ class TradeManager:
         # 1. 第一次检查缓存 (无锁)
         if not refresh and use_default_symbols:
             cached = self._load_prediction_cache()
-            if cached and cached.get("date") == today_str:
+            current_model = self.model_manager.get_current_model()
+            
+            if cached and cached.get("model") == current_model:
                 self.log(f"使用缓存的预测结果 (日期: {cached.get('date')}, 模型: {cached.get('model')})")
                 return cached
             elif cached:
-                self.log(f"缓存过期 (缓存日期: {cached.get('date')}, 今天: {today_str})，准备重新计算...")
+                if cached.get("model") != current_model:
+                    self.log(f"模型已变更 (缓存: {cached.get('model')}, 当前: {current_model})，准备重新计算...")
+                # Removed date check to avoid auto-recalculation on page refresh
+                # else:
+                #    self.log(f"缓存过期 (缓存日期: {cached.get('date')}, 今天: {today_str})，准备重新计算...")
 
         # 2. 获取锁，确保只有一个线程在计算
         self.log("正在请求预测资源锁...")
@@ -103,7 +109,9 @@ class TradeManager:
             # 3. 第二次检查缓存 (有锁，防止在等待锁的过程中其他线程已经算好了)
             if not refresh and use_default_symbols:
                 cached = self._load_prediction_cache()
-                if cached and cached.get("date") == today_str:
+                current_model = self.model_manager.get_current_model()
+                
+                if cached and cached.get("model") == current_model:
                     self.log(f"使用新生成的缓存预测结果")
                     return cached
 
@@ -237,7 +245,7 @@ class TradeManager:
                                     "signal": "NODATA",
                                     "score": 0.0,
                                     "confidence": 0.0,
-                                    "date": latest_global_date.strftime("%Y-%m-%d"),
+                                    "date": latest_global_date.strftime("%Y-%m-%d %H:%M:%S"),
                                     "price": 0.0,
                                     "message": "暂无数据"
                                 })
@@ -261,7 +269,7 @@ class TradeManager:
                             message = ""
                             if target_date < latest_global_date:
                                 signal = "SUSPENDED"
-                                message = f"停牌/数据延迟 ({target_date.strftime('%Y-%m-%d')})"
+                                message = f"停牌/数据延迟 ({target_date.strftime('%Y-%m-%d %H:%M:%S')})"
 
                             predictions.append({
                                 "symbol": symbol,
@@ -269,7 +277,7 @@ class TradeManager:
                                 "signal": signal,
                                 "score": float(pred_score),
                                 "confidence": abs(float(pred_score)) * 100,
-                                "date": target_date.strftime("%Y-%m-%d"),
+                                "date": target_date.strftime("%Y-%m-%d %H:%M:%S"),
                                 "price": float(df.loc[(target_date, symbol)]["close"]),
                                 "message": message,
                             })
@@ -280,7 +288,7 @@ class TradeManager:
                                 "signal": "NODATA",
                                 "score": 0.0,
                                 "confidence": 0.0,
-                                "date": latest_global_date.strftime("%Y-%m-%d"),
+                                "date": latest_global_date.strftime("%Y-%m-%d %H:%M:%S"),
                                 "price": 0.0,
                                 "message": "无法获取特征"
                             })
@@ -293,7 +301,7 @@ class TradeManager:
                             "signal": "ERROR",
                             "score": 0.0,
                             "confidence": 0.0,
-                            "date": latest_global_date.strftime("%Y-%m-%d"),
+                            "date": latest_global_date.strftime("%Y-%m-%d %H:%M:%S"),
                             "price": 0.0,
                             "message": str(e)
                         })
@@ -306,7 +314,7 @@ class TradeManager:
                 result = {
                     "status": "success",
                     "model": model_name,
-                    "date": latest_date.strftime("%Y-%m-%d"),
+                    "date": latest_date.strftime("%Y-%m-%d %H:%M:%S"),
                     "predictions": predictions,
                 }
                 
@@ -449,6 +457,19 @@ class TradeManager:
                         self._index_constituents_cache[cache_key] = cons
                         cache_updated = True
                         resolved.extend(cons)
+                elif s_upper in ["SSE50", "000016", "50", "SZ50"]:
+                    cache_key = "SSE50"
+                    if not refresh and cache_key in self._index_constituents_cache:
+                         resolved.extend(self._index_constituents_cache[cache_key])
+                         self.log(f"使用缓存获取 {cache_key} 成分股 ({len(self._index_constituents_cache[cache_key])} 只)")
+                    elif hasattr(provider, "get_index_constituents"):
+                        self.log(f"正在获取上证50成分股...")
+                        cons = provider.get_index_constituents("000016")
+                        self.log(f"已获取 {len(cons)} 只成分股")
+                        # Update cache
+                        self._index_constituents_cache[cache_key] = cons
+                        cache_updated = True
+                        resolved.extend(cons)
                 else:
                     resolved.append(s)
                     
@@ -524,188 +545,7 @@ class TradeManager:
             self.log(f"读取预测缓存失败: {e}")
             return None
 
-    def get_latest_predictions(self, symbols: list[str] | None = None, refresh: bool = False) -> dict:
-        """
-        获取最新的预测信号
 
-        Args:
-            symbols: 股票代码列表，如果为 None 则使用默认配置
-            refresh: 是否强制刷新缓存（如指数成分股）
-
-        Returns:
-            包含预测信号的字典
-        """
-        # 0. 尝试从缓存加载 (仅当未指定特定 subset symbols 且不要求刷新时)
-        if not refresh and symbols is None:
-            cached = self._load_prediction_cache()
-            if cached:
-                self.log(f"使用缓存的预测结果 (日期: {cached.get('date')}, 模型: {cached.get('model')})")
-                return cached
-
-        try:
-            from autotrade.research.data import QlibDataAdapter
-            from autotrade.research.features import QlibFeatureGenerator
-
-            self.log("正在获取预测信号...")
-
-            # 1. 加载配置的股票列表
-            use_default_symbols = (symbols is None)
-            if symbols is None:
-                base_dir = os.path.dirname(os.path.abspath(__file__))
-                config_path = os.path.join(base_dir, "../configs/universe.yaml")
-                symbols = ["CSI300"]  # 默认 A 股 CSI300
-
-                try:
-                    if os.path.exists(config_path):
-                        with open(config_path, "r") as f:
-                            config = yaml.safe_load(f)
-                            if config and "symbols" in config:
-                                symbols = config["symbols"]
-                except Exception as e:
-                    self.log(f"读取配置失败，使用默认股票列表: {e}")
-
-            # 解析可能的指数代码
-            symbols = self._resolve_symbols(symbols, refresh=refresh)
-
-            # 2. 加载数据
-            adapter = QlibDataAdapter(interval="1d", market="cn")
-            end_date = datetime.now()
-            start_date = end_date - timedelta(days=60)  # 获取60天数据用于特征计算
-
-            df = adapter.load_data(symbols, start_date, end_date)
-
-            should_fetch = df.empty
-            
-            # 检查数据是否过旧
-            if not df.empty:
-                try:
-                    latest_date = df.index.get_level_values(0).max().date()
-                    today = datetime.now().date()
-                    # 如果最新数据不是今天，且距离上次检查超过 1 小时（避免频繁请求），尝试同步
-                    if latest_date < today:
-                        last_check = self.state.get("_last_data_check")
-                        # 检查间隔：3600秒 (1小时)
-                        if not last_check or (datetime.now() - datetime.fromisoformat(last_check)).total_seconds() > 3600:
-                            should_fetch = True
-                            self.log(f"数据滞后 (最新: {latest_date})，尝试同步...")
-                except Exception as e:
-                    self.log(f"检查数据时效性失败: {e}")
-
-            if should_fetch:
-                try:
-                    # 获取数据 (append 模式支持增量更新)
-                    if df.empty:
-                        self.log("本地无数据，正在从 AKShare 获取...")
-                    
-                    adapter.fetch_and_store(symbols, start_date, end_date, update_mode="append")
-                    df = adapter.load_data(symbols, start_date, end_date)
-                    
-                    # 更新检查时间
-                    self.state["_last_data_check"] = datetime.now().isoformat()
-                except Exception as e:
-                    self.log(f"数据同步失败: {e}")
-
-            if df.empty:
-                return {
-                    "status": "error",
-                    "message": "无法获取数据",
-                    "predictions": [],
-                }
-
-            # 3. 生成特征
-            feature_gen = QlibFeatureGenerator(normalize=True)
-            features = feature_gen.generate(df)
-
-            # 4. 加载模型
-            model_name = self.ml_config.get("model_name")
-            if model_name is None:
-                model_name = self.model_manager.get_current_model()
-
-            if not model_name:
-                return {
-                    "status": "error",
-                    "message": "未找到可用模型，请先训练模型",
-                    "predictions": [],
-                }
-
-            model_info = self.model_manager.get_model_info(model_name)
-            if not model_info or "path" not in model_info:
-                return {
-                    "status": "error",
-                    "message": f"模型 {model_name} 不可用",
-                    "predictions": [],
-                }
-
-            # 5. 加载模型并预测
-            import pickle
-            import numpy as np
-
-            model_path = Path(model_info["path"]) / "model.pkl"
-            with open(model_path, "rb") as f:
-                model = pickle.load(f)
-
-            # 获取股票名称映射
-            stock_names = adapter.provider.get_stock_names(symbols)
-
-            # 获取每只股票最新的特征
-            predictions = []
-            latest_date = features.index.get_level_values(0).max()
-
-            for symbol in symbols:
-                try:
-                    # 获取该股票最新日期的特征
-                    if (latest_date, symbol) in features.index:
-                        symbol_features = features.loc[(latest_date, symbol)]
-                        X = symbol_features.values.reshape(1, -1)
-                        pred_score = model.predict(X)[0]
-
-                        # 转换为信号
-                        if pred_score > 0.01:
-                            signal = "BUY"
-                        elif pred_score < -0.01:
-                            signal = "SELL"
-                        else:
-                            signal = "HOLD"
-
-                        predictions.append({
-                            "symbol": symbol,
-                            "name": stock_names.get(symbol, symbol),
-                            "signal": signal,
-                            "score": float(pred_score),
-                            "confidence": abs(float(pred_score)) * 100,
-                            "date": latest_date.strftime("%Y-%m-%d"),
-                            "price": float(df.loc[(latest_date, symbol)]["close"]),
-                        })
-                except Exception as e:
-                    self.log(f"预测 {symbol} 失败: {e}")
-
-            # 按得分排序
-            predictions.sort(key=lambda x: x["score"], reverse=True)
-
-            self.log(f"预测完成: {len(predictions)} 只股票")
-
-            result = {
-                "status": "success",
-                "model": model_name,
-                "date": latest_date.strftime("%Y-%m-%d"),
-                "predictions": predictions,
-            }
-            
-            # 6. 保存到缓存 (仅当使用默认股票列表时)
-            if use_default_symbols:
-                self._save_prediction_cache(result)
-                
-            return result
-
-        except Exception as e:
-            import traceback
-            self.log(f"预测失败: {e}")
-            traceback.print_exc()
-            return {
-                "status": "error",
-                "message": str(e),
-                "predictions": [],
-            }
 
     def run_backtest(self, params: dict):
         """Run a backtest in a separate thread."""
@@ -1112,6 +952,9 @@ class TradeManager:
                         "icir": metrics["icir"],
                         "trained_via_ui": True,
                         "updated_at": datetime.now().isoformat(),
+                        # 注意：不再保存 normalization_params
+                        # 因为使用截面排名 (cross_sectional_rank) 时，
+                        # 特征已经归一化到 [0, 1]，不需要额外的 Z-score 标准化
                     }
                 )
 

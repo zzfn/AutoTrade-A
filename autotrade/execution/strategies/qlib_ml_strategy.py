@@ -135,6 +135,11 @@ class QlibMLStrategy(Strategy):
             self.trainer = LightGBMTrainer(model_dir=self.models_dir)
             self.trainer.load(model_path)
             
+            # 检查是否有标准化参数
+            if hasattr(self.trainer, 'metadata') and 'normalization_params' in self.trainer.metadata:
+                self.feature_generator.set_normalization_params(self.trainer.metadata['normalization_params'])
+                self.log_message(f"已加载模型标准化参数")
+
             # 如果模型元数据中有 interval，且策略未显式指定，则尝试同步
             if hasattr(self.trainer, 'metadata') and 'interval' in self.trainer.metadata:
                 model_interval = self.trainer.metadata['interval']

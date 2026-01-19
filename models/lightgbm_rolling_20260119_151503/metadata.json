@@ -1,6 +1,6 @@
 {
-  "train_samples": 45539,
-  "num_features": 57,
+  "train_samples": 581271,
+  "num_features": 52,
   "best_iteration": 1,
   "params": {
     "objective": "regression",
@@ -16,11 +16,6 @@
     "seed": 42
   },
   "feature_names": [
-    "$open",
-    "$high",
-    "$low",
-    "$close",
-    "$volume",
     "$return_1d",
     "$return_5d",
     "$return_10d",
@@ -356,15 +351,17 @@
     "688506.SH",
     "688981.SH"
   ],
-  "train_days": 252,
+  "train_start_date": "2010-01-01",
+  "valid_start_date": "2022-01-01",
+  "valid_end_date": "2023-12-31",
   "interval": "1d",
   "market": "cn",
-  "ic": -0.06692332811271483,
-  "icir": -1.5967210473825815,
+  "ic": 0.006403288527967394,
+  "icir": 0.5180573054805171,
   "trained_via_ui": true,
-  "updated_at": "2026-01-19T13:46:28.297920",
+  "updated_at": "2026-01-19T15:15:03.398854",
   "model_name": "lightgbm_rolling",
-  "version": "20260119_134628",
-  "saved_at": "2026-01-19T13:46:28.298717",
+  "version": "20260119_151503",
+  "saved_at": "2026-01-19T15:15:03.399984",
   "model_type": "LightGBMTrainer"
 }

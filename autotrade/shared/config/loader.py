@@ -24,7 +24,8 @@ class ConfigLoader:
 
     @property
     def timeframe(self) -> str:
-        return self._config.get("timeframe", "1d")
+        # A 股固定使用日线数据
+        return "1d"
 
     def get(self, key: str, default: Any = None) -> Any:
         return self._config.get(key, default)

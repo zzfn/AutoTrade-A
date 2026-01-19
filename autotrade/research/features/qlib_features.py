@@ -36,23 +36,51 @@ class QlibFeatureGenerator(BaseFeatureGenerator):
     def __init__(
         self,
         window_sizes: list[int] | None = None,
-        include_raw: bool = True,
-        normalize: bool = True,
+        include_raw: bool = False,
+        use_log: bool = True,
+        use_log_returns: bool = True,
+        use_cross_sectional_rank: bool = True,
+        normalize: bool = False,  # 默认使用 Rank，关闭 Z-score
         fill_method: str = "ffill",
     ):
         """
-        初始化特征生成器
+        初始化特征生成器 (Dimensionless Mode)
 
         Args:
-            window_sizes: 滚动窗口大小列表，默认 [5, 10, 20, 30, 60]
-            include_raw: 是否包含原始 OHLCV 特征
-            normalize: 是否对特征进行标准化
-            fill_method: 缺失值填充方法 ('ffill', 'bfill', 'zero', 'mean')
+            window_sizes: 滚动窗口大小列表
+            include_raw: 是否包含原始 OHLCV 特征 (False 以消除量纲)
+            use_log: 原始特征是否对数化 (仅当 include_raw=True 时有效)
+            use_log_returns: 是否使用对数收益率 log(P_t/P_{t-1})
+            use_cross_sectional_rank: 是否使用截面排名 (映射到 [0, 1])
+            normalize: 是否进行时序 Z-score 标准化
+                注意：如果 use_cross_sectional_rank=True，则自动禁用 Z-score 标准化，
+                因为截面排名已经将数据归一化到 [0, 1]，再使用 Z-score 会导致不一致。
+            fill_method: 缺失值填充方法
         """
         self.window_sizes = window_sizes or [5, 10, 20, 30, 60]
         self.include_raw = include_raw
+        self.use_log = use_log
+        self.use_log_returns = use_log_returns
+        self.use_cross_sectional_rank = use_cross_sectional_rank
+        # 关键：截面排名和 Z-score 不能同时使用
+        # 截面排名已将数据归一化到 [0, 1]，使用 Z-score 会导致训练/预测不一致
+        if use_cross_sectional_rank and normalize:
+            logger.warning(
+                "use_cross_sectional_rank=True 时自动禁用 Z-score 标准化，"
+                "因为截面排名已将数据归一化到 [0, 1]"
+            )
+            normalize = False
         self.normalize = normalize
         self.fill_method = fill_method
+        self.normalization_params = {}
+
+    def get_normalization_params(self) -> dict:
+        """获取标准化参数"""
+        return self.normalization_params
+
+    def set_normalization_params(self, params: dict):
+        """设置标准化参数"""
+        self.normalization_params = params
 
     def generate(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -82,14 +110,27 @@ class QlibFeatureGenerator(BaseFeatureGenerator):
         if self.include_raw:
             for col in ["open", "high", "low", "close", "volume"]:
                 if col in df.columns:
-                    features[f"${col}"] = df[col]
+                    val = df[col]
+                    # 对数化处理
+                    if self.use_log:
+                        val = np.log1p(val)
+                    features[f"${col}"] = val
 
         # 价格回报率
         close = df["close"]
-        features["$return_1d"] = close.pct_change(1)
-        features["$return_5d"] = close.pct_change(5)
-        features["$return_10d"] = close.pct_change(10)
-        features["$return_20d"] = close.pct_change(20)
+        if self.use_log_returns:
+            # Log Return: ln(P_t / P_{t-1})
+            log_close = np.log(close)
+            features["$return_1d"] = log_close.diff(1)
+            features["$return_5d"] = log_close.diff(5)
+            features["$return_10d"] = log_close.diff(10)
+            features["$return_20d"] = log_close.diff(20)
+        else:
+            # Simple Return
+            features["$return_1d"] = close.pct_change(1)
+            features["$return_5d"] = close.pct_change(5)
+            features["$return_10d"] = close.pct_change(10)
+            features["$return_20d"] = close.pct_change(20)
 
         # 高低价比率
         features["$high_low_ratio"] = df["high"] / df["low"]
@@ -181,19 +222,14 @@ class QlibFeatureGenerator(BaseFeatureGenerator):
         symbols = df.index.get_level_values("symbol").unique()
         logger.info(f"开始为 {len(symbols)} 只股票生成特征...")
 
+        # 1. 先生成基础特征
         for symbol in symbols:
             try:
                 # 提取单个股票数据
                 symbol_df = df.xs(symbol, level="symbol")
-
-                # 生成特征
                 features = self._generate_single_symbol(symbol_df, symbol=symbol)
-
-                # 添加股票标识
                 features["symbol"] = symbol
-
                 results.append(features.reset_index())
-
             except Exception as e:
                 logger.error(f"生成 {symbol} 特征失败: {e}")
 
@@ -204,6 +240,22 @@ class QlibFeatureGenerator(BaseFeatureGenerator):
         result = pd.concat(results, ignore_index=True)
         result = result.set_index(["timestamp", "symbol"])
         result = result.sort_index()
+
+        # 2. 截面排名 (Cross-Sectional Rank)
+        if self.use_cross_sectional_rank:
+            logger.info("执行截面排名 (Cross-Sectional Rank)...")
+            # 对每一列特征，按时间分组进行排名映射到 [0, 1]
+            # 注意：不应该对 symbol 列排名，也不应该处理非数值列
+            numeric_cols = result.select_dtypes(include=[np.number]).columns
+            
+            # 使用 groupby().rank(pct=True)
+            ranked = result[numeric_cols].groupby("timestamp").rank(pct=True, method="first")
+            
+            # 替换原始值
+            result[numeric_cols] = ranked
+            
+            # 填充可能的 NaN (如果某天只有一只股票，rank 可能是 NaN 或 1.0)
+            result = result.fillna(0.5)
 
         return result
 
@@ -243,13 +295,28 @@ class QlibFeatureGenerator(BaseFeatureGenerator):
         """标准化特征（Z-score）"""
         # 跳过原始 OHLCV 特征
         raw_cols = ["$open", "$high", "$low", "$close", "$volume"]
+        
+        # 判断是否使用预设参数
+        use_preset = bool(self.normalization_params)
 
         for col in df.columns:
             if col in raw_cols:
                 continue
 
-            mean = df[col].mean()
-            std = df[col].std()
+            if use_preset:
+                params = self.normalization_params.get(col)
+                if params:
+                    mean = params["mean"]
+                    std = params["std"]
+                else:
+                    # 如果有新特征但没有参数，使用当前数据统计量（在此处可能应该警告）
+                    mean = df[col].mean()
+                    std = df[col].std()
+            else:
+                # 计算并保存参数
+                mean = df[col].mean()
+                std = df[col].std()
+                self.normalization_params[col] = {"mean": float(mean), "std": float(std)}
 
             if std > 0:
                 df[col] = (df[col] - mean) / std
