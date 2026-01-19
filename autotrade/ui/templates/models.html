@@ -157,87 +157,7 @@
     }
 
     return (
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* 策略配置 */}
-        <Card title="策略配置" className="col-span-1">
-          <div className="space-y-6">
-            {/* 运行控制 */}
-            <div>
-              <label className="block text-sm text-slate-400 mb-2">
-                策略运行控制
-              </label>
-              <div className="flex items-center justify-between p-3 bg-slate-800/30 rounded-xl border border-slate-700/30 mb-3">
-                <StatusBadge status={strategyConfig?.status} />
-                {strategyConfig?.is_running ? (
-                  <button
-                    onClick={handleStopStrategy}
-                    className="px-3 py-1.5 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 rounded-lg text-xs font-bold transition-colors"
-                  >
-                    停止策略
-                  </button>
-                ) : (
-                  <button
-                    onClick={handleStartStrategy}
-                    className="px-3 py-1.5 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 rounded-lg text-xs font-bold transition-colors"
-                  >
-                    启动策略
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* ML 策略参数 */}
-            <div className="space-y-4 p-4 bg-purple-500/5 rounded-xl border border-purple-500/20">
-              <div className="text-sm font-medium text-purple-300 mb-3">
-                ML 策略参数
-              </div>
-
-                <div>
-                  <label className="block text-xs text-slate-400 mb-1">
-                    Top-K (持仓数量)
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="20"
-                    value={strategyConfig?.ml_config?.top_k || 3}
-                    onChange={(e) =>
-                      handleMLConfigChange({ top_k: parseInt(e.target.value) })
-                    }
-                    className="w-full px-3 py-2 rounded-lg text-sm"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs text-slate-400 mb-1">
-                    再平衡周期 (天)
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="30"
-                    value={strategyConfig?.ml_config?.rebalance_period || 1}
-                    onChange={(e) =>
-                      handleMLConfigChange({
-                        rebalance_period: parseInt(e.target.value),
-                      })
-                    }
-                    className="w-full px-3 py-2 rounded-lg text-sm"
-                  />
-                </div>
-
-                <div className="pt-2">
-                  <label className="block text-xs text-slate-400 mb-1">
-                    当前模型
-                  </label>
-                  <div className="text-sm font-mono text-purple-300">
-                    {currentModel?.name || "未选择"}
-                  </div>
-                </div>
-            </div>
-          </div>
-        </Card>
-
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* 数据中心 */}
         <Card title="数据中心" className="col-span-1">
           <div className="flex flex-col gap-5">
@@ -386,7 +306,7 @@
         </Card>
 
         {/* 模型列表 */}
-        <Card title="可用模型" className="col-span-1 md:col-span-3">
+        <Card title="可用模型" className="col-span-1 md:col-span-2">
           {models.length === 0 ? (
             <div className="text-slate-500 text-center py-12 italic border border-dashed border-slate-700/50 rounded-xl bg-slate-800/20">
               暂无可用模型。请先点击上方"开始训练模型"按钮训练新模型。
