@@ -121,7 +121,7 @@ async def run_backtest(request: Request):
 
 
 @app.get("/api/predict")
-async def get_predictions(refresh: bool = False):
+def get_predictions(refresh: bool = False):
     """获取最新的预测信号"""
     return tm.get_latest_predictions(refresh=refresh)
 
@@ -133,9 +133,13 @@ async def get_predictions_with_symbols(request: Request):
         data = await request.json()
         symbols = data.get("symbols")
         refresh = data.get("refresh", False)
-        return tm.get_latest_predictions(symbols, refresh=refresh)
+        # run in threadpool to avoid blocking
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, lambda: tm.get_latest_predictions(symbols, refresh=refresh))
     except Exception:
-        return tm.get_latest_predictions()
+         # Fallback default
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, tm.get_latest_predictions)
 
 
 # ==================== ML 策略相关 API ====================
