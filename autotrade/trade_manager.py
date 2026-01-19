@@ -769,7 +769,22 @@ class TradeManager:
             "ml_config": self.ml_config.copy(),
             "is_running": self.is_running,
             "status": self.state["status"],
+            "universe_symbols": self._get_universe_symbols(),
         }
+
+    def _get_universe_symbols(self) -> list[str]:
+        """从配置文件读取默认股票池"""
+        try:
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            config_path = os.path.join(base_dir, "../configs/universe.yaml")
+            if os.path.exists(config_path):
+                with open(config_path, "r") as f:
+                    config = yaml.safe_load(f)
+                    if config and "symbols" in config:
+                        return config["symbols"]
+        except Exception as e:
+            self.log(f"读取 universe 配置失败: {e}")
+        return ["CSI300"]
 
     def list_models(self) -> list:
         """列出所有可用的 ML 模型"""
@@ -843,7 +858,9 @@ class TradeManager:
 
                 # 默认配置 - A 股股票
                 train_config = config or {}
-                symbols = train_config.get("symbols", ["CSI300"])
+                symbols = train_config.get("symbols")
+                if not symbols:
+                    symbols = self._get_universe_symbols()
                 
                 # Resolve symbols
                 symbols = self._resolve_symbols(symbols)
@@ -1005,7 +1022,9 @@ class TradeManager:
                 self.log("开始数据同步")
 
                 sync_config = config or {}
-                symbols = sync_config.get("symbols", ["CSI300"])
+                symbols = sync_config.get("symbols")
+                if not symbols:
+                    symbols = self._get_universe_symbols()
                 
                 # Resolve symbols
                 symbols = self._resolve_symbols(symbols)

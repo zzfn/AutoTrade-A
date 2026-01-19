@@ -92,18 +92,15 @@
     };
 
     const [trainingInterval, setTrainingInterval] = React.useState("1d");
-    const [trainingSymbols, setTrainingSymbols] = React.useState("CSI300");
 
     // 启动模型训练
     const handleTrainModel = async () => {
       try {
-        const symbols = trainingSymbols.split(",").map(s => s.trim().toUpperCase()).filter(s => s);
         await fetch("/api/models/train", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            interval: trainingInterval,
-            symbols: symbols
+            interval: trainingInterval
           }),
         });
         loadData();
@@ -118,12 +115,10 @@
     // 启动数据同步
     const handleDataSync = async () => {
       try {
-        const symbols = trainingSymbols.split(",").map(s => s.trim().toUpperCase()).filter(s => s);
         await fetch("/api/data/sync", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            symbols: symbols,
             days: syncDays,
             interval: syncInterval,
             update_mode: "append"
@@ -358,18 +353,18 @@
                 </div>
 
                 <div>
-                  <label className="block text-xs text-slate-500 mb-1.5 font-bold uppercase tracking-wider">
-                    训练标的池 (逗号分隔)
-                  </label>
-                  <input
-                    type="text"
-                    value={trainingSymbols}
-                    onChange={(e) => setTrainingSymbols(e.target.value)}
-                    placeholder="例如: 000001.SZ, 600519.SH"
-                    className="w-full bg-slate-900/50 border border-slate-700/50 rounded-xl px-4 py-2.5 font-mono text-xs text-purple-300 outline-none focus:border-purple-500/50 transition-all shadow-inner"
-                  />
+                  <div className="text-xs text-slate-500 mb-2 font-bold uppercase tracking-wider">
+                    当前配置标的池 (Universe)
+                  </div>
+                  <div className="flex flex-wrap gap-2 p-3 bg-slate-900/50 border border-slate-700/50 rounded-xl min-h-[44px]">
+                    {strategyConfig?.universe_symbols?.map((s, idx) => (
+                      <span key={idx} className="px-2 py-1 bg-purple-500/10 text-purple-300 rounded text-[10px] font-mono border border-purple-500/20">
+                        {s}
+                      </span>
+                    )) || <span className="text-slate-600 text-[10px]">未配置</span>}
+                  </div>
                   <p className="mt-2 text-[10px] text-slate-500 leading-relaxed italic">
-                    提示：建议包含所有你打算在策略中交易的标的，以获得最佳预测效果。
+                    提示：标的池已在 universe.yaml 中固定配置。
                   </p>
                 </div>
 
