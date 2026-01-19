@@ -182,7 +182,7 @@ class TradeManager:
                     }
 
                 # 3. 生成特征
-                feature_gen = QlibFeatureGenerator(normalize=True)
+                feature_gen = QlibFeatureGenerator()
                 features = feature_gen.generate(df)
 
                 # 4. 加载模型
@@ -884,7 +884,7 @@ class TradeManager:
 
                 # 2. 生成特征 (40%)
                 self.training_status["message"] = "生成特征..."
-                feature_gen = QlibFeatureGenerator(normalize=True)
+                feature_gen = QlibFeatureGenerator()
                 features = feature_gen.generate(df)
                 self.training_status["progress"] = 40
 

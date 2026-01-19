@@ -98,7 +98,7 @@ class TestQlibFeatureGenerator:
     def generator(self):
         from autotrade.research.features import QlibFeatureGenerator
 
-        return QlibFeatureGenerator(normalize=False)
+        return QlibFeatureGenerator(include_raw=True)
 
     @pytest.fixture
     def sample_ohlcv(self):
@@ -149,7 +149,7 @@ class TestFeaturePreprocessor:
     def preprocessor(self):
         from autotrade.research.features import FeaturePreprocessor
 
-        return FeaturePreprocessor(normalize_method="zscore")
+        return FeaturePreprocessor(normalize_method="rank")
 
     def test_fit_transform(self, preprocessor):
         """测试拟合和转换"""
@@ -162,9 +162,9 @@ class TestFeaturePreprocessor:
 
         result = preprocessor.fit_transform(df)
 
-        # Z-score 标准化后均值接近 0
-        assert abs(result["a"].mean()) < 0.01
-        assert abs(result["b"].mean()) < 0.01
+        # Rank 标准化后均值接近 0.5
+        assert abs(result["a"].mean() - 0.5) < 0.1
+        assert abs(result["b"].mean() - 0.5) < 0.1
 
 
 # ==================== 模型训练测试 ====================

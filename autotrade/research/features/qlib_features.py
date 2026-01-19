@@ -40,7 +40,6 @@ class QlibFeatureGenerator(BaseFeatureGenerator):
         use_log: bool = True,
         use_log_returns: bool = True,
         use_cross_sectional_rank: bool = True,
-        normalize: bool = False,  # 默认使用 Rank，关闭 Z-score
         fill_method: str = "ffill",
     ):
         """
@@ -52,9 +51,6 @@ class QlibFeatureGenerator(BaseFeatureGenerator):
             use_log: 原始特征是否对数化 (仅当 include_raw=True 时有效)
             use_log_returns: 是否使用对数收益率 log(P_t/P_{t-1})
             use_cross_sectional_rank: 是否使用截面排名 (映射到 [0, 1])
-            normalize: 是否进行时序 Z-score 标准化
-                注意：如果 use_cross_sectional_rank=True，则自动禁用 Z-score 标准化，
-                因为截面排名已经将数据归一化到 [0, 1]，再使用 Z-score 会导致不一致。
             fill_method: 缺失值填充方法
         """
         self.window_sizes = window_sizes or [5, 10, 20, 30, 60]
@@ -62,25 +58,8 @@ class QlibFeatureGenerator(BaseFeatureGenerator):
         self.use_log = use_log
         self.use_log_returns = use_log_returns
         self.use_cross_sectional_rank = use_cross_sectional_rank
-        # 关键：截面排名和 Z-score 不能同时使用
-        # 截面排名已将数据归一化到 [0, 1]，使用 Z-score 会导致训练/预测不一致
-        if use_cross_sectional_rank and normalize:
-            logger.warning(
-                "use_cross_sectional_rank=True 时自动禁用 Z-score 标准化，"
-                "因为截面排名已将数据归一化到 [0, 1]"
-            )
-            normalize = False
-        self.normalize = normalize
         self.fill_method = fill_method
-        self.normalization_params = {}
 
-    def get_normalization_params(self) -> dict:
-        """获取标准化参数"""
-        return self.normalization_params
-
-    def set_normalization_params(self, params: dict):
-        """设置标准化参数"""
-        self.normalization_params = params
 
     def generate(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -203,9 +182,7 @@ class QlibFeatureGenerator(BaseFeatureGenerator):
         # 处理缺失值
         result = self._handle_missing(result)
 
-        # 标准化
-        if self.normalize:
-            result = self._normalize_features(result)
+        # TODO: 可以添加其他的时序处理
 
         log_msg = f"生成了 {len(result.columns)} 个特征"
         if symbol:
@@ -291,37 +268,6 @@ class QlibFeatureGenerator(BaseFeatureGenerator):
 
         return df
 
-    def _normalize_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """标准化特征（Z-score）"""
-        # 跳过原始 OHLCV 特征
-        raw_cols = ["$open", "$high", "$low", "$close", "$volume"]
-        
-        # 判断是否使用预设参数
-        use_preset = bool(self.normalization_params)
-
-        for col in df.columns:
-            if col in raw_cols:
-                continue
-
-            if use_preset:
-                params = self.normalization_params.get(col)
-                if params:
-                    mean = params["mean"]
-                    std = params["std"]
-                else:
-                    # 如果有新特征但没有参数，使用当前数据统计量（在此处可能应该警告）
-                    mean = df[col].mean()
-                    std = df[col].std()
-            else:
-                # 计算并保存参数
-                mean = df[col].mean()
-                std = df[col].std()
-                self.normalization_params[col] = {"mean": float(mean), "std": float(std)}
-
-            if std > 0:
-                df[col] = (df[col] - mean) / std
-
-        return df
 
     def get_feature_names(self) -> list[str]:
         """获取所有特征名称（用于模型训练）"""
@@ -355,7 +301,7 @@ class FeaturePreprocessor:
         self,
         clip_outliers: bool = True,
         outlier_std: float = 3.0,
-        normalize_method: str = "zscore",
+        normalize_method: str = "rank",
     ):
         """
         初始化预处理器
@@ -363,7 +309,7 @@ class FeaturePreprocessor:
         Args:
             clip_outliers: 是否截断异常值
             outlier_std: 异常值判定标准（几倍标准差）
-            normalize_method: 标准化方法 ('zscore', 'minmax', 'rank')
+            normalize_method: 标准化方法 ('minmax', 'rank')
         """
         self.clip_outliers = clip_outliers
         self.outlier_std = outlier_std
@@ -408,9 +354,7 @@ class FeaturePreprocessor:
                 result[col] = result[col].clip(lower, upper)
 
             # 标准化
-            if self.normalize_method == "zscore" and params["std"] > 0:
-                result[col] = (result[col] - params["mean"]) / params["std"]
-            elif self.normalize_method == "minmax":
+            if self.normalize_method == "minmax":
                 range_val = params["max"] - params["min"]
                 if range_val > 0:
                     result[col] = (result[col] - params["min"]) / range_val
