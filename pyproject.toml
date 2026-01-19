@@ -7,7 +7,7 @@ requires-python = ">=3.11"
 dependencies = [
     # 金融量化与交易
     "pyqlib",                    # 量化金融库
-    "lumibot",                   # 交易机器人框架
+    "vectorbt",                  # 向量化回测框架
     # 机器学习框架
     "lightgbm",                  # LightGBM 梯度提升
     # 数据处理与科学计算

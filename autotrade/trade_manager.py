@@ -11,10 +11,9 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
-from lumibot.backtesting import YahooDataBacktesting
 
-from autotrade.execution.strategies import QlibMLStrategy
 from autotrade.research.models import ModelManager
 
 class TradeManager:
@@ -74,9 +73,53 @@ class TradeManager:
 
         self._initialized = True
 
-    # ... (skipping methods until _resolve_symbols) ...
-    
-    # Keeping _resolve_symbols and other methods as they are.
+    def _resolve_symbols(self, symbols: list[str], refresh: bool = False) -> list[str]:
+        """
+        解析股票列表，将指数代码转换为成分股列表
+
+        Args:
+            symbols: 股票代码列表，可能包含指数代码（如 "sse50", "CSI300"）
+            refresh: 是否强制刷新指数成分股
+
+        Returns:
+            实际的股票代码列表
+        """
+        from autotrade.research.data.providers import DataProviderFactory
+
+        provider = DataProviderFactory.get_provider("cn")
+        resolved = []
+
+        # 指数代码映射
+        index_mapping = {
+            "sse50": "000016",  # 上证50
+            "csi300": "000300",  # 沪深300
+            "csi500": "000905",  # 中证500
+            "sz50": "399330",    # 深证50
+        }
+
+        for symbol in symbols:
+            symbol_lower = symbol.lower()
+            if symbol_lower in index_mapping:
+                # 获取指数成分股
+                index_code = index_mapping[symbol_lower]
+                self.log(f"正在获取 {symbol} ({index_code}) 的成分股...")
+                try:
+                    constituents = provider.get_index_constituents(index_code)
+                    if constituents:
+                        self.log(f"{symbol} 包含 {len(constituents)} 只股票")
+                        resolved.extend(constituents)
+                    else:
+                        self.log(f"警告：无法获取 {symbol} 的成分股")
+                except Exception as e:
+                    self.log(f"获取 {symbol} 成分股失败: {e}")
+            else:
+                # 直接添加股票代码
+                resolved.append(symbol.upper())
+
+        # 去重
+        resolved = list(dict.fromkeys(resolved).keys())
+        return resolved
+
     # Below is the modified get_latest_predictions
 
     def get_latest_predictions(self, symbols: list[str] | None = None, refresh: bool = False) -> dict:
@@ -86,8 +129,7 @@ class TradeManager:
         通过加锁和双重检查锁定 (Double-Checked Locking) 防止并发重复计算。
         """
         use_default_symbols = (symbols is None)
-        today_str = datetime.now().strftime("%Y-%m-%d")
-
+        
         # 1. 第一次检查缓存 (无锁)
         if not refresh and use_default_symbols:
             cached = self._load_prediction_cache()
@@ -99,14 +141,11 @@ class TradeManager:
             elif cached:
                 if cached.get("model") != current_model:
                     self.log(f"模型已变更 (缓存: {cached.get('model')}, 当前: {current_model})，准备重新计算...")
-                # Removed date check to avoid auto-recalculation on page refresh
-                # else:
-                #    self.log(f"缓存过期 (缓存日期: {cached.get('date')}, 今天: {today_str})，准备重新计算...")
 
-        # 2. 获取锁，确保只有一个线程在计算
+        # 2. 获取锁
         self.log("正在请求预测资源锁...")
         with self.prediction_lock:
-            # 3. 第二次检查缓存 (有锁，防止在等待锁的过程中其他线程已经算好了)
+            # 3. 第二次检查缓存
             if not refresh and use_default_symbols:
                 cached = self._load_prediction_cache()
                 current_model = self.model_manager.get_current_model()
@@ -117,24 +156,13 @@ class TradeManager:
 
             try:
                 from autotrade.research.data import QlibDataAdapter
-                from autotrade.research.features import QlibFeatureGenerator
+                from autotrade.core.signal_generator import SignalGenerator
 
                 self.log("开始执行预测计算...")
 
                 # 1. 加载配置的股票列表
                 if symbols is None:
-                    base_dir = os.path.dirname(os.path.abspath(__file__))
-                    config_path = os.path.join(base_dir, "../configs/universe.yaml")
-                    symbols = ["CSI300"]  # 默认 A 股 CSI300
-
-                    try:
-                        if os.path.exists(config_path):
-                            with open(config_path, "r") as f:
-                                config = yaml.safe_load(f)
-                                if config and "symbols" in config:
-                                    symbols = config["symbols"]
-                    except Exception as e:
-                        self.log(f"读取配置失败，使用默认股票列表: {e}")
+                    symbols = self._get_default_universe()
 
                 # 解析可能的指数代码
                 symbols = self._resolve_symbols(symbols, refresh=refresh)
@@ -142,23 +170,25 @@ class TradeManager:
                 # 2. 加载数据
                 adapter = QlibDataAdapter(interval="1d", market="cn")
                 end_date = datetime.now()
-                start_date = end_date - timedelta(days=60)  # 获取60天数据用于特征计算
+                # 确保有足够的数据生成特征 (Lookback)
+                # 默认 SignalGenerator lookback 是 60
+                start_date = end_date - timedelta(days=120)  
 
                 df = adapter.load_data(symbols, start_date, end_date)
 
                 should_fetch = df.empty
                 
-                # 检查数据是否过旧
+                # ... Data freshness check logic (simplified) ...
                 if not df.empty:
                     try:
                         latest_date = df.index.get_level_values(0).max().date()
                         today = datetime.now().date()
-                        # 如果最新数据不是今天，且距离上次检查超过 1 小时
                         if latest_date < today:
-                            last_check = self.state.get("_last_data_check")
-                            if not last_check or (datetime.now() - datetime.fromisoformat(last_check)).total_seconds() > 3600:
-                                should_fetch = True
-                                self.log(f"数据滞后 (最新: {latest_date})，尝试同步...")
+                             # Check if we checked recently
+                             last_check = self.state.get("_last_data_check")
+                             if not last_check or (datetime.now() - datetime.fromisoformat(last_check)).total_seconds() > 3600:
+                                 should_fetch = True
+                                 self.log(f"数据滞后 (最新: {latest_date})，尝试同步...")
                     except Exception as e:
                         self.log(f"检查数据时效性失败: {e}")
 
@@ -169,7 +199,6 @@ class TradeManager:
                         
                         adapter.fetch_and_store(symbols, start_date, end_date, update_mode="append")
                         df = adapter.load_data(symbols, start_date, end_date)
-                        
                         self.state["_last_data_check"] = datetime.now().isoformat()
                     except Exception as e:
                         self.log(f"数据同步失败: {e}")
@@ -181,144 +210,51 @@ class TradeManager:
                         "predictions": [],
                     }
 
-                # 3. 生成特征
-                feature_gen = QlibFeatureGenerator()
-                features = feature_gen.generate(df)
-
-                # 4. 加载模型
+                # 3. Initialize SignalGenerator
                 model_name = self.ml_config.get("model_name")
-                if model_name is None:
-                    model_name = self.model_manager.get_current_model()
-
-                if not model_name:
-                    return {
-                        "status": "error",
-                        "message": "未找到可用模型，请先训练模型",
-                        "predictions": [],
-                    }
-
-                model_info = self.model_manager.get_model_info(model_name)
-                if not model_info or "path" not in model_info:
-                    return {
-                        "status": "error",
-                        "message": f"模型 {model_name} 不可用",
-                        "predictions": [],
-                    }
-
-                # 5. 加载模型并预测
-                import pickle
-                import numpy as np
-
-                model_path = Path(model_info["path"]) / "model.pkl"
-                with open(model_path, "rb") as f:
-                    model = pickle.load(f)
-
-                # 获取股票名称映射
-                stock_names = adapter.provider.get_stock_names(symbols)
-
-                # 获取每只股票最新的特征
-                predictions = []
+                # If model_name is None, SignalGenerator uses current default or fallback
                 
-                # 获取全局最新日期，作为参考
-                latest_global_date = features.index.get_level_values(0).max()
-
-                for symbol in symbols:
+                sig_gen = SignalGenerator(
+                    symbols=symbols,
+                    model_name=model_name,
+                    models_dir="models",
+                    market="cn",
+                    top_k=self.ml_config.get("top_k", 3)
+                )
+                
+                # Check model status
+                if sig_gen.trainer is None:
+                     self.log("警告: 未加载 ML 模型，使用默认 fallback 策略")
+                
+                # 4. Generate Predictions
+                predictions = sig_gen.generate_latest_signals(df)
+                
+                # 5. Enrich with stock names
+                stock_names = adapter.provider.get_stock_names(symbols)
+                
+                for p in predictions:
+                    p["name"] = stock_names.get(p["symbol"], p["symbol"])
+                    # Try to add current price
                     try:
-                        target_date = latest_global_date
-                        
-                        # 1. 检查该股票在全局最新日期是否有数据
-                        if (target_date, symbol) not in features.index:
-                            # 2. 如果没有，检查该股票是否有任何数据
-                            if symbol in features.index.get_level_values("symbol"):
-                                # 获取该股票的最新日期
-                                symbol_dates = features.xs(symbol, level="symbol").index
-                                if not symbol_dates.empty:
-                                    target_date = symbol_dates.max()
-                                    # 如果距离全局最新日期太久（超过10天），标记为停牌/无数据
-                                    # 这里可以根据需要调整逻辑
-                                    pass
-                            else:
-                                # 完全无数据
-                                predictions.append({
-                                    "symbol": symbol,
-                                    "name": stock_names.get(symbol, symbol),
-                                    "signal": "NODATA",
-                                    "score": 0.0,
-                                    "confidence": 0.0,
-                                    "date": latest_global_date.strftime("%Y-%m-%d %H:%M:%S"),
-                                    "price": 0.0,
-                                    "message": "暂无数据"
-                                })
-                                continue
+                        p["price"] = float(df.xs(p["symbol"], level="symbol")["close"].iloc[-1])
+                    except:
+                        p["price"] = 0.0
 
-                        # 获取特征并预测
-                        if (target_date, symbol) in features.index:
-                            symbol_features = features.loc[(target_date, symbol)]
-                            X = symbol_features.values.reshape(1, -1)
-                            pred_score = model.predict(X)[0]
-
-                            # 转换为信号
-                            if pred_score > 0.01:
-                                signal = "BUY"
-                            elif pred_score < -0.01:
-                                signal = "SELL"
-                            else:
-                                signal = "HOLD"
-
-                            # 检查是否停牌 (如果数据日期早于全局最新日期)
-                            message = ""
-                            if target_date < latest_global_date:
-                                signal = "SUSPENDED"
-                                message = f"停牌/数据延迟 ({target_date.strftime('%Y-%m-%d %H:%M:%S')})"
-
-                            predictions.append({
-                                "symbol": symbol,
-                                "name": stock_names.get(symbol, symbol),
-                                "signal": signal,
-                                "score": float(pred_score),
-                                "confidence": abs(float(pred_score)) * 100,
-                                "date": target_date.strftime("%Y-%m-%d %H:%M:%S"),
-                                "price": float(df.loc[(target_date, symbol)]["close"]),
-                                "message": message,
-                            })
-                        else:
-                             predictions.append({
-                                "symbol": symbol,
-                                "name": stock_names.get(symbol, symbol),
-                                "signal": "NODATA",
-                                "score": 0.0,
-                                "confidence": 0.0,
-                                "date": latest_global_date.strftime("%Y-%m-%d %H:%M:%S"),
-                                "price": 0.0,
-                                "message": "无法获取特征"
-                            })
-
-                    except Exception as e:
-                        self.log(f"预测 {symbol} 失败: {e}")
-                        predictions.append({
-                            "symbol": symbol,
-                            "name": stock_names.get(symbol, symbol),
-                            "signal": "ERROR",
-                            "score": 0.0,
-                            "confidence": 0.0,
-                            "date": latest_global_date.strftime("%Y-%m-%d %H:%M:%S"),
-                            "price": 0.0,
-                            "message": str(e)
-                        })
-
-                # 按得分排序，将 ERROR/NODATA 排在最后
+                # Sort
                 predictions.sort(key=lambda x: (x["signal"] in ["BUY", "SELL", "HOLD", "SUSPENDED"], x["score"]), reverse=True)
-
+                
                 self.log(f"预测完成: {len(predictions)} 只股票")
+                
+                model_used = sig_gen.model_name or "fallback"
+                latest_data_date = df.index.get_level_values(0).max().strftime("%Y-%m-%d %H:%M:%S")
 
                 result = {
                     "status": "success",
-                    "model": model_name,
-                    "date": latest_date.strftime("%Y-%m-%d %H:%M:%S"),
+                    "model": model_used,
+                    "date": latest_data_date,
                     "predictions": predictions,
                 }
                 
-                # 6. 保存到缓存 (仅当使用默认股票列表时)
                 if use_default_symbols:
                     self._save_prediction_cache(result)
                     
@@ -333,329 +269,178 @@ class TradeManager:
                     "message": str(e),
                     "predictions": [],
                 }
-
-    def set_strategy(self, strategy_instance):
-        """Set the strategy instance to be managed."""
-        self.active_strategy = strategy_instance
-
-    def initialize_and_start(self):
-        """
-        初始化策略（A 股模式：仅用于预测信号，不进行实际交易）
-
-        AutoTrade-A 不支持实时交易，仅提供预测信号和回测功能。
-        """
-        if self.is_running:
-            return {"status": "already_running"}
-
-        self.log("AutoTrade-A 已启动 - A 股预测信号模式")
-        self.log("说明: 本系统仅提供预测信号和回测功能，不进行实际交易")
-        self.update_status("ready")
-
-        return {"status": "ready", "message": "系统就绪，可使用预测和回测功能"}
-
-    def _get_cache_path(self):
-        """获取缓存文件路径"""
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        cache_dir = os.path.join(base_dir, "data", "cache")
-        os.makedirs(cache_dir, exist_ok=True)
-        return os.path.join(cache_dir, "index_constituents.parquet")
-
-    def _load_disk_cache(self):
-        """从磁盘加载缓存 (Parquet)"""
+    
+    def _get_default_universe(self):
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        config_path = os.path.join(base_dir, "../configs/universe.yaml")
+        symbols = ["CSI300"]
         try:
-            path = self._get_cache_path()
-            if os.path.exists(path):
-                df = pd.read_parquet(path)
-                if not df.empty and "index_code" in df.columns and "symbol" in df.columns:
-                    # Convert DataFrame back to dict: {'index_code': ['symbol1', ...]}
-                    return df.groupby('index_code')['symbol'].apply(list).to_dict()
+            if os.path.exists(config_path):
+                with open(config_path, "r") as f:
+                    config = yaml.safe_load(f)
+                    if config and "symbols" in config:
+                        symbols = config["symbols"]
         except Exception as e:
-            self.log(f"读取缓存文件失败: {e}")
-        return {}
-
-    def _save_disk_cache(self, cache_data):
-        """保存缓存到磁盘 (Parquet)"""
-        try:
-            path = self._get_cache_path()
-            
-            # Convert dict to DataFrame
-            data_list = []
-            for index_code, symbols in cache_data.items():
-                for symbol in symbols:
-                    data_list.append({"index_code": index_code, "symbol": symbol})
-            
-            if data_list:
-                df = pd.DataFrame(data_list)
-                df.to_parquet(path, index=False)
-            else:
-                # Handle empty cache case properly if needed, or just don't save
-                pass
-                
-        except Exception as e:
-            self.log(f"写入缓存文件失败: {e}")
-
-    def _resolve_symbols(self, symbols: list[str], refresh: bool = False) -> list[str]:
-        """
-        解析股票代码，支持指数代码扩展（如 CSI300）
-        
-        Args:
-            symbols: 股票代码列表
-            refresh: 是否强制刷新缓存
-        """
-        if not symbols:
-            return []
-            
-        # Initialize and load cache if needed
-        if not hasattr(self, "_index_constituents_cache") or self._index_constituents_cache is None:
-            self._index_constituents_cache = self._load_disk_cache()
-
-        resolved = []
-        cache_updated = False
-        
-        try:
-            from autotrade.research.data.providers import DataProviderFactory
-            # 获取 provider
-            provider = DataProviderFactory.get_provider("cn")
-            
-            for s in symbols:
-                s_upper = s.upper().strip()
-                if s_upper in ["CSI300", "000300", "300", "HS300"]:
-                    cache_key = "CSI300"
-                    
-                    # Check cache first
-                    use_cache = False
-                    if not refresh and cache_key in self._index_constituents_cache:
-                        cached_count = len(self._index_constituents_cache[cache_key])
-                        if cached_count >= 290:
-                            use_cache = True
-                        else:
-                            self.log(f"缓存中 {cache_key} 成分股数量不足 ({cached_count} < 290)，强制刷新...")
-
-                    if use_cache:
-                         resolved.extend(self._index_constituents_cache[cache_key])
-                         self.log(f"使用缓存获取 {cache_key} 成分股 ({len(self._index_constituents_cache[cache_key])} 只)")
-                    elif hasattr(provider, "get_index_constituents"):
-                        self.log(f"正在获取沪深300成分股...")
-                        cons = provider.get_index_constituents("000300")
-                        self.log(f"已获取 {len(cons)} 只成分股")
-                        # Update cache
-                        self._index_constituents_cache[cache_key] = cons
-                        cache_updated = True
-                        resolved.extend(cons)
-                    else:
-                        self.log("Provider 不支持 get_index_constituents")
-                elif s_upper in ["CSI500", "000905", "500", "ZZ500"]:
-                    cache_key = "CSI500"
-                    if not refresh and cache_key in self._index_constituents_cache:
-                         resolved.extend(self._index_constituents_cache[cache_key])
-                         self.log(f"使用缓存获取 {cache_key} 成分股 ({len(self._index_constituents_cache[cache_key])} 只)")
-                    elif hasattr(provider, "get_index_constituents"):
-                        self.log(f"正在获取中证500成分股...")
-                        cons = provider.get_index_constituents("000905")
-                        self.log(f"已获取 {len(cons)} 只成分股")
-                        # Update cache
-                        self._index_constituents_cache[cache_key] = cons
-                        cache_updated = True
-                        resolved.extend(cons)
-                elif s_upper in ["SSE50", "000016", "50", "SZ50"]:
-                    cache_key = "SSE50"
-                    if not refresh and cache_key in self._index_constituents_cache:
-                         resolved.extend(self._index_constituents_cache[cache_key])
-                         self.log(f"使用缓存获取 {cache_key} 成分股 ({len(self._index_constituents_cache[cache_key])} 只)")
-                    elif hasattr(provider, "get_index_constituents"):
-                        self.log(f"正在获取上证50成分股...")
-                        cons = provider.get_index_constituents("000016")
-                        self.log(f"已获取 {len(cons)} 只成分股")
-                        # Update cache
-                        self._index_constituents_cache[cache_key] = cons
-                        cache_updated = True
-                        resolved.extend(cons)
-                else:
-                    resolved.append(s)
-                    
-            # Save to disk if updated
-            if cache_updated:
-                self._save_disk_cache(self._index_constituents_cache)
-                
-        except Exception as e:
-            self.log(f"解析股票代码失败: {e}")
-            # Fallback to original
-            return symbols
-
-        # 去重
-        return sorted(list(set(resolved)))
-
-    def _get_prediction_cache_path(self):
-        """获取预测结果缓存文件路径"""
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        cache_dir = os.path.join(base_dir, "data", "cache")
-        os.makedirs(cache_dir, exist_ok=True)
-        return os.path.join(cache_dir, "latest_predictions.parquet")
-
-    def _save_prediction_cache(self, predictions_data: dict):
-        """保存预测结果到 Parquet"""
-        try:
-            path = self._get_prediction_cache_path()
-            
-            # Extract data
-            preds = predictions_data.get("predictions", [])
-            if not preds:
-                return
-                
-            df = pd.DataFrame(preds)
-            
-            # Add metadata columns
-            df["_meta_model"] = predictions_data.get("model", "")
-            df["_meta_date"] = predictions_data.get("date", "")
-            
-            df.to_parquet(path, index=False)
-            self.log("预测结果已缓存到 Parquet")
-        except Exception as e:
-            self.log(f"保存预测缓存失败: {e}")
-
-    def _load_prediction_cache(self):
-        """从 Parquet 加载预测结果"""
-        try:
-            path = self._get_prediction_cache_path()
-            if not os.path.exists(path):
-                return None
-                
-            df = pd.read_parquet(path)
-            if df.empty:
-                return None
-                
-            # Extract metadata from first row
-            model_name = df.iloc[0].get("_meta_model", "")
-            date_str = df.iloc[0].get("_meta_date", "")
-            
-            # Remove metadata columns for the payload
-            cols_to_drop = [c for c in df.columns if c.startswith("_meta_")]
-            valid_df = df.drop(columns=cols_to_drop)
-            
-            predictions = valid_df.to_dict("records")
-            
-            return {
-                "status": "success",
-                "model": model_name,
-                "date": date_str,
-                "predictions": predictions,
-                "from_cache": True
-            }
-        except Exception as e:
-            self.log(f"读取预测缓存失败: {e}")
-            return None
-
-
+            self.log(f"读取配置失败: {e}")
+        return symbols
 
     def run_backtest(self, params: dict):
-        """Run a backtest in a separate thread."""
+        """Run a backtest using vectorbt in a separate thread."""
 
         def _backtest_task():
             try:
-                self.log("Starting backtest...")
+                self.log("Starting backtest (VectorBT)...")
 
-                # 1. Parse dates
-                backtesting_start = datetime.strptime(
-                    params.get("start_date", "2024-01-01"), "%Y-%m-%d"
-                )
-                backtesting_end = datetime.strptime(
-                    params.get("end_date", "2025-12-31"), "%Y-%m-%d"
-                )
+                from autotrade.core.signal_generator import SignalGenerator
+                from autotrade.backtesting.engine import BacktestEngine
+                from autotrade.research.data import QlibDataAdapter
 
-                # 2. Parse symbols - Always use configured symbols from universe.yaml
+                # 1. Parse dates and config
+                start_date = datetime.strptime(params.get("start_date", "2024-01-01"), "%Y-%m-%d")
+                end_date = datetime.strptime(params.get("end_date", "2025-12-31"), "%Y-%m-%d")
+                
+                # Always use configured symbols for now
                 symbols = self._get_universe_symbols()
-                self.log(f"使用配置的股票池: {symbols}")
-
-                # Resolve symbols (handle CSI300 etc.)
                 symbols = self._resolve_symbols(symbols)
+                self.log(f"回测股票池规模: {len(symbols)}")
 
-                # 3. Parse interval - A 股仅支持日线
-                interval = "1d"
+                # 2. Load Data
+                adapter = QlibDataAdapter(interval="1d", market="cn")
+                # Add buffer for features
+                data_start = start_date - timedelta(days=120) 
+                
+                self.log("正在加载数据...")
+                df = adapter.load_data(symbols, data_start, end_date)
 
-                # 4. A 股市场固定
-                market = "cn"
+                if df.empty:
+                    self.log("本地无数据，正在从 AKShare 获取...")
+                    try:
+                        adapter.fetch_and_store(symbols, data_start, end_date, update_mode="append")
+                        df = adapter.load_data(symbols, data_start, end_date)
+                    except Exception as e:
+                        self.log(f"数据获取失败: {e}")
+                        return
 
-                self.log(
-                    f"Backtesting [A股] {symbols} from {backtesting_start} to {backtesting_end} (Interval: {interval})"
+                if df.empty:
+                    self.log("回测失败: 无数据")
+                    return
+
+                # 3. Setup Strategy and Engine
+                model_name = params.get("model_name", self.ml_config.get("model_name"))
+                top_k = int(params.get("top_k", self.ml_config.get("top_k", 3)))
+                
+                sig_gen = SignalGenerator(
+                    symbols=symbols,
+                    model_name=model_name,
+                    market="cn",
+                    top_k=top_k
+                )
+                
+                engine = BacktestEngine(
+                    signal_generator=sig_gen,
+                    initial_capital=float(params.get("initial_capital", 100000.0)),
+                    commission=0.0005,
+                    slippage=0.0005
                 )
 
-                # 5. Execute backtest with ML strategy
-                strategy_class = QlibMLStrategy
+                # 4. Run Backtest
+                pf = engine.run(df)
 
+                # 5. Generate Report and Save
+                stats = engine.get_stats(pf)
+                self.log(f"Backtest Complete. Total Return: {stats['total_return']:.2%}, Sharpe: {stats['sharpe_ratio']:.2f}")
+
+                # Save report
+                base_dir = os.path.dirname(os.path.abspath(__file__))
+                logs_dir = os.path.join(os.path.dirname(base_dir), "logs")
+                os.makedirs(logs_dir, exist_ok=True)
+
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                report_path = os.path.join(logs_dir, f"backtest_{timestamp}.html")
+
+                # Generate VectorBT report with plots
                 try:
-                    lumibot_interval = "day"
+                    import plotly.graph_objects as go
 
-                    # 如果未指定模型，使用当前最优模型
-                    model_name = params.get("model_name", self.ml_config.get("model_name"))
-                    if model_name is None:
-                        model_name = self.model_manager.get_current_model()
+                    # Create subplots
+                    fig = go.Figure()
 
-                    backtest_params = {
-                        "symbols": symbols,
-                        "model_name": model_name,
-                        "top_k": params.get("top_k", self.ml_config.get("top_k", 3)),
-                        "rebalance_period": params.get("rebalance_period", 1),
-                        "sleeptime": "0S",
-                        "timestep": "1D",
-                        "market": market,
-                    }
+                    # 1. Equity Curve
+                    idx = pf.index()
+                    equity = pf.value()
+                    fig.add_trace(go.Scatter(
+                        x=idx,
+                        y=equity,
+                        mode='lines',
+                        name='Portfolio Value',
+                        line=dict(color='#2E86AB', width=2)
+                    ))
 
-                    # A 股使用第一个股票作为基准
-                    benchmark = symbols[0] if symbols else "000001.SZ"
-
-                    # Start time to identify new files
-                    start_time = datetime.now()
-
-                    strategy_class.backtest(
-                        YahooDataBacktesting,
-                        backtesting_start,
-                        backtesting_end,
-                        benchmark_asset=benchmark,
-                        parameters=backtest_params,
-                        time_unit=lumibot_interval,
+                    fig.update_layout(
+                        title=f"Backtest Report - {timestamp}",
+                        xaxis_title="Date",
+                        yaxis_title="Portfolio Value",
+                        template="plotly_white",
+                        height=400
                     )
 
-                    # Find newly generated reports in logs/
-                    import glob
+                    # Save to HTML
+                    fig.write_html(report_path)
 
-                    base_dir = os.path.dirname(os.path.abspath(__file__))
-                    logs_dir = os.path.join(os.path.dirname(base_dir), "logs")
+                    # Append stats to the HTML file
+                    with open(report_path, "r+") as f:
+                        content = f.read()
+                        # Insert stats before closing body
+                        stats_html = f"""
+                        <div style="margin: 20px; padding: 20px; background: #f5f5f5; border-radius: 5px;">
+                            <h2>Performance Statistics</h2>
+                            <table style="border-collapse: collapse; width: 100%;">
+                                <tr style="background: #ddd;">
+                                    <th style="padding: 10px; text-align: left;">Metric</th>
+                                    <th style="padding: 10px; text-align: left;">Value</th>
+                                </tr>
+                                <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;">Total Return</td><td style="padding: 8px; border-bottom: 1px solid #ddd;">{stats['total_return']:.2%}</td></tr>
+                                <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;">Sharpe Ratio</td><td style="padding: 8px; border-bottom: 1px solid #ddd;">{stats['sharpe_ratio']:.2f}</td></tr>
+                                <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;">Max Drawdown</td><td style="padding: 8px; border-bottom: 1px solid #ddd;">{stats['max_drawdown']:.2%}</td></tr>
+                                <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;">Total Trades</td><td style="padding: 8px; border-bottom: 1px solid #ddd;">{stats['total_trades']}</td></tr>
+                                <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;">Win Rate</td><td style="padding: 8px; border-bottom: 1px solid #ddd;">{stats['win_rate']:.2%}</td></tr>
+                                <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;">Model</td><td style="padding: 8px; border-bottom: 1px solid #ddd;">{sig_gen.model_name}</td></tr>
+                                <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;">Top K</td><td style="padding: 8px; border-bottom: 1px solid #ddd;">{sig_gen.top_k}</td></tr>
+                            </table>
+                        </div>
+                        """
+                        content = content.replace("</body>", stats_html + "</body>")
+                        f.seek(0)
+                        f.write(content)
+                        f.truncate()
 
-                    # Look for html files generated recently
-                    html_files = glob.glob(os.path.join(logs_dir, "*.html"))
-                    new_reports = []
-                    for f in html_files:
-                        if (
-                            os.path.getmtime(f) >= start_time.timestamp() - 5
-                        ):  # 5s buffer
-                            new_reports.append(os.path.basename(f))
-
-                    tearsheet = next((f for f in new_reports if "tearsheet" in f), None)
-                    trades_report = next(
-                        (f for f in new_reports if "trades" in f), None
-                    )
-
-                    if tearsheet or trades_report:
-                        self.state["last_backtest"] = {
-                            "tearsheet": f"/reports/{tearsheet}" if tearsheet else None,
-                            "trades": f"/reports/{trades_report}"
-                            if trades_report
-                            else None,
-                            "timestamp": datetime.now().isoformat(),
-                        }
-                        self.log(f"Backtest reports generated: {new_reports}")
-
-                    self.log("Backtest finished successfully.")
                 except Exception as e:
-                    import traceback
-
-                    self.log(f"Backtest execution failed: {e}")
-                    print(traceback.format_exc())
+                    # Fallback to simple HTML if plotting fails
+                    with open(report_path, "w") as f:
+                        f.write(f"<html><head><style>body{{font-family:Arial;}} table{{border-collapse:collapse;width:50%;}} th,td{{padding:10px;text-align:left;border-bottom:1px solid #ddd;}} th{{background:#ddd;}}</style></head><body>")
+                        f.write(f"<h1>Backtest Report</h1>")
+                        f.write(f"<p><strong>Date:</strong> {timestamp}</p>")
+                        f.write(f"<p><strong>Model:</strong> {sig_gen.model_name}</p>")
+                        f.write(f"<h2>Performance Statistics</h2>")
+                        f.write(f"<table><tr><th>Metric</th><th>Value</th></tr>")
+                        f.write(f"<tr><td>Total Return</td><td>{stats['total_return']:.2%}</td></tr>")
+                        f.write(f"<tr><td>Sharpe Ratio</td><td>{stats['sharpe_ratio']:.2f}</td></tr>")
+                        f.write(f"<tr><td>Max Drawdown</td><td>{stats['max_drawdown']:.2%}</td></tr>")
+                        f.write(f"<tr><td>Total Trades</td><td>{stats['total_trades']}</td></tr>")
+                        f.write(f"<tr><td>Win Rate</td><td>{stats['win_rate']:.2%}</td></tr>")
+                        f.write(f"</table></body></html>")
+                
+                self.state["last_backtest"] = {
+                    "tearsheet": f"/logs/backtest_{timestamp}.html", # Simplified path mapping
+                    "timestamp": datetime.now().isoformat(),
+                    "stats": {k: float(v) if isinstance(v, (int, float, np.number)) else str(v) for k,v in stats.items() if k != 'stats'}
+                }
 
             except Exception as e:
+                import traceback
                 self.log(f"Backtest error: {e}")
+                traceback.print_exc()
 
-        # Start backtest in background thread
         thread = threading.Thread(target=_backtest_task, daemon=True)
         thread.start()
         return {"status": "backtest_started"}
