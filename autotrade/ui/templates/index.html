@@ -4,8 +4,9 @@
 <script type="text/babel">
   {% raw %}
   const Dashboard = () => {
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const { data, status: connectionStatus } = useWebSocket(
-      `ws://${window.location.host}/ws`,
+      `${protocol}//${window.location.host}/ws`,
     );
     const [predictions, setPredictions] = useState(null);
     const [loadingPredictions, setLoadingPredictions] = useState(false);
