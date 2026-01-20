@@ -3,6 +3,216 @@
 {% endblock %} {% block scripts %}
 <script type="text/babel">
   {% raw %}
+  const StockChartModal = ({ symbol, onClose }) => {
+    const chartRef = React.useRef(null);
+    const [loading, setLoading] = React.useState(true);
+    const [error, setError] = React.useState(null);
+    const [chartInstance, setChartInstance] = React.useState(null);
+
+    React.useEffect(() => {
+      const fetchData = async () => {
+        try {
+          setLoading(true);
+          const res = await fetch(`/api/data/kline?symbol=${symbol}`);
+          const data = await res.json();
+
+          if (data.status === "error") {
+            setError(data.message);
+            return;
+          }
+
+          if (!chartRef.current) return;
+
+          const myChart = echarts.init(chartRef.current);
+          setChartInstance(myChart);
+
+          const dates = data.dates;
+          const values = data.values; // [open, close, low, high, vol]
+
+          // Calculate MA
+          const calculateMA = (dayCount) => {
+            var result = [];
+            for (var i = 0, len = values.length; i < len; i++) {
+                if (i < dayCount) {
+                    result.push('-');
+                    continue;
+                }
+                var sum = 0;
+                for (var j = 0; j < dayCount; j++) {
+                    sum += values[i - j][1]; // close
+                }
+                result.push((sum / dayCount).toFixed(2));
+            }
+            return result;
+          };
+
+          const option = {
+            backgroundColor: '#0f172a',
+            title: {
+                text: `${data.name} (${symbol})`,
+                left: 10,
+                top: 10,
+                textStyle: { color: '#e2e8f0' }
+            },
+            tooltip: {
+                trigger: 'axis',
+                axisPointer: { type: 'cross' }
+            },
+            legend: {
+                data: ['K线', 'MA5', 'MA10', 'MA20'],
+                top: 10,
+                textStyle: { color: '#94a3b8' }
+            },
+            grid: [
+                { left: '5%', right: '5%', height: '60%', top: '15%' },
+                { left: '5%', right: '5%', top: '80%', height: '10%' }
+            ],
+            xAxis: [
+              {
+                type: 'category',
+                data: dates,
+                scale: true,
+                boundaryGap: false,
+                axisLine: { onZero: false, lineStyle: { color: '#475569' } },
+                splitLine: { show: false },
+                min: 'dataMin'
+              },
+              {
+                type: 'category',
+                gridIndex: 1,
+                data: dates,
+                scale: true,
+                boundaryGap: false,
+                axisLine: { onZero: false, lineStyle: { color: '#475569' } },
+                axisTick: { show: false },
+                splitLine: { show: false },
+                axisLabel: { show: false },
+                min: 'dataMin'
+              }
+            ],
+            yAxis: [
+              {
+                scale: true,
+                splitArea: { show: true, areaStyle: { color: ['rgba(30,41,59,0.3)', 'rgba(15,23,42,0.3)'] } },
+                axisLine: { lineStyle: { color: '#475569' } },
+                splitLine: { lineStyle: { color: '#334155' } }
+              },
+              {
+                scale: true,
+                gridIndex: 1,
+                splitNumber: 2,
+                axisLabel: { show: false },
+                axisLine: { lineStyle: { color: '#475569' } },
+                splitLine: { show: false }
+              }
+            ],
+            dataZoom: [
+              { type: 'inside', xAxisIndex: [0, 1], start: 80, end: 100 },
+              { show: true, xAxisIndex: [0, 1], type: 'slider', bottom: 10, start: 80, end: 100, borderColor: '#334155' }
+            ],
+            series: [
+                {
+                    name: 'K线',
+                    type: 'candlestick',
+                    data: values,
+                    itemStyle: {
+                        color: '#10b981', // Up (Green in this app context)
+                        color0: '#f43f5e', // Down (Red/Rose in this app context)
+                        borderColor: '#10b981',
+                        borderColor0: '#f43f5e'
+                    }
+                },
+                {
+                    name: 'MA5',
+                    type: 'line',
+                    data: calculateMA(5),
+                    smooth: true,
+                    lineStyle: { opacity: 0.5 }
+                },
+                {
+                    name: 'MA10',
+                    type: 'line',
+                    data: calculateMA(10),
+                    smooth: true,
+                    lineStyle: { opacity: 0.5 }
+                },
+                {
+                    name: 'MA20',
+                    type: 'line',
+                    data: calculateMA(20),
+                    smooth: true,
+                    lineStyle: { opacity: 0.5 }
+                },
+                {
+                    name: 'Volume',
+                    type: 'bar',
+                    xAxisIndex: 1,
+                    yAxisIndex: 1,
+                    data: values.map((item, i) => {
+                        return {
+                            value: item[4],
+                            itemStyle: {
+                                color: item[1] > item[0] ? '#10b981' : '#f43f5e'
+                            }
+                        }
+                    })
+                }
+            ]
+          };
+
+          myChart.setOption(option);
+
+        } catch (e) {
+            console.error(e);
+            setError(e.toString());
+        } finally {
+            setLoading(false);
+        }
+      };
+
+      if (symbol) fetchData();
+
+      return () => {
+          if (chartInstance) chartInstance.dispose();
+      };
+    }, [symbol]);
+
+    // Handle Window Resize
+    React.useEffect(() => {
+        const handleResize = () => chartInstance && chartInstance.resize();
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, [chartInstance]);
+
+    if (!symbol) return null;
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-sm p-4 fade-in" onClick={onClose}>
+            <div className="bg-slate-900 border border-slate-700 rounded-xl w-full max-w-5xl h-[80vh] flex flex-col shadow-2xl overflow-hidden relative" onClick={e => e.stopPropagation()}>
+                <button onClick={onClose} className="absolute top-4 right-4 z-10 text-slate-400 hover:text-white bg-slate-800/50 p-2 rounded-full transition-colors">
+                    <i className="fas fa-times"></i>
+                </button>
+
+                {loading && (
+                    <div className="absolute inset-0 flex items-center justify-center z-20 bg-slate-900/50">
+                        <div className="w-10 h-10 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin"></div>
+                    </div>
+                )}
+
+                {error && (
+                    <div className="absolute inset-0 flex items-center justify-center z-20">
+                        <div className="text-rose-400 bg-rose-500/10 p-4 rounded-lg border border-rose-500/20">
+                            Error: {error}
+                        </div>
+                    </div>
+                )}
+
+                <div ref={chartRef} className="w-full h-full"></div>
+            </div>
+        </div>
+    );
+  };
+
   const Dashboard = () => {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const { data, status: connectionStatus } = useWebSocket(
@@ -10,6 +220,7 @@
     );
     const [predictions, setPredictions] = useState(null);
     const [loadingPredictions, setLoadingPredictions] = useState(false);
+    const [selectedStock, setSelectedStock] = useState(null);
 
     // 加载预测信号
     const fetchPredictions = async (refresh = false) => {
@@ -81,6 +292,7 @@
       );
 
     return (
+      <>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 fade-in">
         {/* Prediction Signals - 新增 */}
         <Card title="📊 最新预测信号" className="col-span-1 md:col-span-3">
@@ -169,7 +381,8 @@
                   {topPicks.map((pred, i) => (
                     <div
                       key={i}
-                      className="p-4 rounded-xl border bg-slate-900/60 border-emerald-500/40 shadow-lg shadow-emerald-500/5 hover:scale-105 transition-transform duration-300 relative group"
+                      onClick={() => setSelectedStock(pred.symbol)}
+                      className="p-4 rounded-xl border bg-slate-900/60 border-emerald-500/40 shadow-lg shadow-emerald-500/5 hover:scale-105 transition-transform duration-300 relative group cursor-pointer"
                     >
                       <div className="absolute -top-3 -right-3 w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center text-slate-900 font-bold text-sm shadow-md z-20">
                         {i + 1}
@@ -267,7 +480,8 @@
                           : pred.signal === "SELL"
                             ? "bg-rose-500/5 border-rose-500/20 hover:border-rose-500/40"
                             : "bg-slate-800/30 border-slate-700/30 hover:border-slate-600/50"
-                      } transition-colors`}
+                      } transition-colors cursor-pointer`}
+                      onClick={() => setSelectedStock(pred.symbol)}
                     >
                       <div>
                         <div className="flex justify-between items-center mb-1">
@@ -414,6 +628,13 @@
           </div>
         </Card>
       </div>
+      {selectedStock && (
+        <StockChartModal
+            symbol={selectedStock}
+            onClose={() => setSelectedStock(null)}
+        />
+      )}
+      </>
     );
   };
 
