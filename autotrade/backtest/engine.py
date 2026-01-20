@@ -17,12 +17,14 @@ class BacktestEngine:
         signal_generator: SignalGenerator, 
         initial_capital: float = 100000.0,
         commission: float = 0.0005,  # 0.05% commission
-        slippage: float = 0.0005     # 0.05% slippage
+        slippage: float = 0.0005,     # 0.05% slippage
+        rebalance_period: int = 1     # 换仓周期
     ):
         self.signal_generator = signal_generator
         self.initial_capital = initial_capital
         self.commission = commission
         self.slippage = slippage
+        self.rebalance_period = rebalance_period
 
     def run(self, data: pd.DataFrame) -> vbt.Portfolio:
         """
@@ -91,6 +93,15 @@ class BacktestEngine:
         # 5. Calculate Weights
         # Equal weight for selected assets
         weights = long_signals.astype(float)
+        
+        # 应用换仓周期：只在换仓日更新权重，其余日期权重保持不变
+        if self.rebalance_period > 1:
+            logger.info(f"Applying rebalance period: {self.rebalance_period} days")
+            # 每隔 self.rebalance_period 行保留一次信号，其余设为 NaN 随后 ffill
+            mask = np.arange(len(weights)) % self.rebalance_period == 0
+            weights[~mask] = np.nan
+            weights = weights.ffill()
+            
         row_sums = weights.sum(axis=1)
         # Avoid division by zero
         weights = weights.div(row_sums.replace(0, 1), axis=0)

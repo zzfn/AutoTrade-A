@@ -376,9 +376,10 @@ class TradeManager:
                 
                 engine = BacktestEngine(
                     signal_generator=sig_gen,
-                    initial_capital=float(params.get("initial_capital", 100000.0)),
-                    commission=0.0005,
-                    slippage=0.0005
+                    initial_capital=float(params.get("initial_capital", 1000000.0)),
+                    commission=float(params.get("commission", 0.0005)),
+                    slippage=float(params.get("slippage", 0.0005)),
+                    rebalance_period=int(params.get("rebalance_period", 5))
                 )
 
                 # 4. Run Backtest
