@@ -798,9 +798,9 @@
   "ic": 0.05137868958125022,
   "icir": 6.527166600149586,
   "trained_via_ui": true,
-  "updated_at": "2026-01-20T15:47:02.304020",
-  "model_name": "lightgbm",
-  "version": "2026-01-20_15-47-02",
-  "saved_at": "2026-01-20T15:47:02.306103",
+  "updated_at": "2026-01-20T16:26:01.767096",
+  "model_name": "lgw",
+  "version": "2026-01-20_16-26-01",
+  "saved_at": "2026-01-20T16:26:01.768185",
   "model_type": "LightGBMTrainer"
 }
