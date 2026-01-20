@@ -12,6 +12,7 @@ from typing import Optional
 import akshare as ak
 import pandas as pd
 from loguru import logger
+from tqdm import tqdm
 
 from autotrade.data.cache import ParquetCache
 
@@ -154,7 +155,7 @@ class AKShareDataProvider(BaseDataProvider):
 
         all_data = []
 
-        for symbol in symbols:
+        for symbol in tqdm(symbols, desc="AKShare Fetch", unit="stock"):
             try:
                 # 1. 检查缓存
                 cached_df = None
@@ -248,26 +249,50 @@ class AKShareDataProvider(BaseDataProvider):
 
         return result
 
+    def _get_market_snapshot(self) -> pd.DataFrame:
+        """获取全市场快照（带每日磁盘缓存）"""
+        if self._stock_info_cache is not None:
+            return self._stock_info_cache
+            
+        # 尝试加载今日磁盘缓存
+        cache_dir = Path("data/cache/akshare")
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        today = datetime.now().strftime("%Y%m%d")
+        cache_file = cache_dir / f"market_snapshot_{today}.pkl"
+        
+        if cache_file.exists():
+            try:
+                logger.debug("加载全市场快照缓存...")
+                self._stock_info_cache = pd.read_pickle(cache_file)
+                return self._stock_info_cache
+            except Exception as e:
+                logger.warning(f"加载快照缓存失败: {e}")
+        
+        # 缓存未命中，从网络获取
+        logger.info("正在下载全市场实时行情 (每天一次)...")
+        self._stock_info_cache = ak.stock_zh_a_spot_em()
+        
+        # 保存缓存
+        try:
+            self._stock_info_cache.to_pickle(cache_file)
+        except Exception as e:
+            logger.warning(f"保存快照缓存失败: {e}")
+            
+        return self._stock_info_cache
+
     def get_stock_names(self, symbols: list[str]) -> dict[str, str]:
         """
         获取股票名称映射
-
-        Args:
-            symbols: 股票代码列表 (带后缀，如 000001.SZ)
-
-        Returns:
-            {symbol: name} 映射字典
         """
         try:
-            if self._stock_info_cache is None:
-                self._stock_info_cache = ak.stock_zh_a_spot_em()
+            snapshot = self._get_market_snapshot()
 
             mapping = {}
             for symbol in symbols:
                 try:
                     code, _ = self._validate_symbol(symbol)
-                    stock_info = self._stock_info_cache[
-                        self._stock_info_cache["代码"] == code
+                    stock_info = snapshot[
+                        snapshot["代码"] == code
                     ]
                     if not stock_info.empty:
                         mapping[symbol] = stock_info.iloc[0]["名称"]
@@ -294,11 +319,10 @@ class AKShareDataProvider(BaseDataProvider):
             code, _ = self._validate_symbol(symbol)
 
             # 获取股票名称
-            if self._stock_info_cache is None:
-                self._stock_info_cache = ak.stock_zh_a_spot_em()
+            snapshot = self._get_market_snapshot()
 
-            stock_info = self._stock_info_cache[
-                self._stock_info_cache["代码"] == code
+            stock_info = snapshot[
+                snapshot["代码"] == code
             ]
 
             if stock_info.empty:

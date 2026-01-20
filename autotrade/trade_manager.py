@@ -73,6 +73,36 @@ class TradeManager:
 
         self._initialized = True
 
+    def _get_cache_path(self) -> Path:
+        """获取缓存文件路径"""
+        base_dir = Path(__file__).parent.parent
+        cache_dir = base_dir / "data" / "cache"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        return cache_dir / "prediction_cache.json"
+
+    def _load_prediction_cache(self) -> dict | None:
+        """加载预测缓存"""
+        try:
+            cache_path = self._get_cache_path()
+            if cache_path.exists():
+                import json
+                with open(cache_path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+        except Exception as e:
+            self.log(f"读取预测缓存失败: {e}")
+        return None
+
+    def _save_prediction_cache(self, data: dict):
+        """保存预测缓存"""
+        try:
+            cache_path = self._get_cache_path()
+            import json
+            with open(cache_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            self.log(f"保存预测缓存失败: {e}")
+
+
     def _resolve_symbols(self, symbols: list[str], refresh: bool = False) -> list[str]:
         """
         解析股票列表，将指数代码转换为成分股列表

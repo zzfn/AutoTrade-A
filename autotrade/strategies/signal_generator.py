@@ -5,8 +5,9 @@ from typing import Optional, List, Dict, Union
 import pandas as pd
 import numpy as np
 from loguru import logger
+from tqdm import tqdm
 
-from autotrade.data.providers import AKShareDataProvider
+from autotrade.data.providers import AKShareDataProvider, DataProviderFactory
 from autotrade.features import QlibFeatureGenerator
 from autotrade.models import LightGBMTrainer, ModelManager
 
@@ -57,6 +58,8 @@ class SignalGenerator:
                 model_path = Path(self.models_dir) / self.model_name
             else:
                 model_path = self.model_manager.get_current_model_path()
+                if model_path:
+                    self.model_name = model_path.name
 
             if not model_path or not model_path.exists():
                 logger.warning(f"ML model not found, will use mock predictions if enabled.")
@@ -82,7 +85,7 @@ class SignalGenerator:
     def _get_cn_provider(self) -> AKShareDataProvider:
         """Get or create A-share data provider."""
         if self._cn_provider is None:
-            self._cn_provider = AKShareDataProvider()
+            self._cn_provider = DataProviderFactory.get_provider("cn")
         return self._cn_provider
 
     def _is_valid_candidate(self, symbol: str, date: datetime) -> bool:
@@ -211,44 +214,60 @@ class SignalGenerator:
         if features.empty:
             return []
             
-        latest_date = features.index.get_level_values(0).max()
+        # 3. Filter valid symbols and prepare batch
+        valid_rows = []
+        valid_symbols = []
         
-        # 3. Iterate over symbols present in the data
-        symbols = features.index.get_level_values("symbol").unique()
+        # 优化：不再使用 tqdm 逐个打印进度，而是快速过滤
+        # 但为了用户感知，简单打印一下
+        logger.info("Filtering valid candidates...")
+        
+        provider = self._get_cn_provider()
         
         for symbol in symbols:
             try:
-                # Check validity
-                if not self._is_valid_candidate(symbol, latest_date):
+                # Validity checks
+                # 1. ST Check (Fast via memory/disk cache)
+                if provider.is_st_stock(symbol):
                     continue
-
-                # Get features for this symbol at latest_date
-                # We check if (latest_date, symbol) exists
-                if (latest_date, symbol) not in features.index:
-                    # Try to find the last available date for this symbol
-                    symbol_feats = features.xs(symbol, level="symbol")
-                    if symbol_feats.empty:
+                
+                # 2. Suspension Check (Fast via memory df)
+                if (latest_date, symbol) in df.index:
+                    vol = df.loc[(latest_date, symbol), "volume"]
+                    if vol == 0 or pd.isna(vol):
                         continue
-                        
-                    last_symbol_date = symbol_feats.index.max()
-                    # If too old, skip or mark suspended?
-                    # For now let's just use the latest available if reasonably close, 
-                    # but strictly we want 'latest_date' signals.
-                    # Let's stick to strict latest_date for now to avoid confusion.
-                    continue
-                
-                # Get the row as DataFrame (keep 2D for predict)
-                row = features.loc[[(latest_date, symbol)]]
-                
-                if self.trainer:
-                    score = float(self.trainer.predict(row)[0])
                 else:
-                    # Fallback: Momentum from raw DF if possible, else 0
-                    # It's hard to get raw momentum from features unless we include raw
-                    # Let's just return 0 if no model
-                    score = 0.0
+                    continue
 
-                # Determine signal
+                # Get features
+                if (latest_date, symbol) not in features.index:
+                     continue
+                
+                row = features.loc[[(latest_date, symbol)]]
+                valid_rows.append(row)
+                valid_symbols.append(symbol)
+                
+            except Exception as e:
+                logger.error(f"Error checking {symbol}: {e}")
+                continue
+
+        if not valid_rows:
+            return []
+            
+        # 4. Batch Prediction
+        logger.info(f"Batch predicting for {len(valid_rows)} symbols...")
+        try:
+            batch_features = pd.concat(valid_rows)
+            
+            if self.trainer:
+                scores = self.trainer.predict(batch_features)
+            else:
+                scores = [0.0] * len(batch_features)
+                
+            # 5. Assemble results
+            for i, symbol in enumerate(valid_symbols):
+                score = float(scores[i])
+                
                 if score > 0.01:
                     signal = "BUY"
                 elif score < -0.01:
@@ -262,13 +281,11 @@ class SignalGenerator:
                     "score": score,
                     "confidence": abs(score) * 100,
                     "date": latest_date.strftime("%Y-%m-%d %H:%M:%S"),
-                    # We can't easily get price here without passing it through or looking up
-                    # But the caller usually has price. 
-                    # We will return the dict and caller can enrich it.
                 })
-
-            except Exception as e:
-                logger.error(f"Prediction for {symbol} failed: {e}")
+                
+        except Exception as e:
+            logger.error(f"Batch prediction failed: {e}")
+            return []
         
         return predictions
 

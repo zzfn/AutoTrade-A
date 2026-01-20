@@ -13,6 +13,7 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 from loguru import logger
+from tqdm import tqdm
 
 from .providers import BaseDataProvider, DataProviderFactory
 
@@ -128,7 +129,7 @@ class QlibDataAdapter:
         else:
             symbols = df["symbol"].unique() if "symbol" in df.columns else []
 
-        for symbol in symbols:
+        for symbol in tqdm(symbols, desc=f"Fetching {self.interval}", unit="stock"):
             try:
                 # 提取单个股票的数据
                 if isinstance(df.index, pd.MultiIndex):

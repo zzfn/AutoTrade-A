@@ -10,6 +10,7 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 from loguru import logger
+from tqdm import tqdm
 
 
 class BaseFeatureGenerator(ABC):
@@ -200,7 +201,7 @@ class QlibFeatureGenerator(BaseFeatureGenerator):
         logger.info(f"开始为 {len(symbols)} 只股票生成特征...")
 
         # 1. 先生成基础特征
-        for symbol in symbols:
+        for symbol in tqdm(symbols, desc="Feature Gen", unit="stock"):
             try:
                 # 提取单个股票数据
                 symbol_df = df.xs(symbol, level="symbol")
