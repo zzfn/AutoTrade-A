@@ -738,7 +738,7 @@ class TradeManager:
                 interval = "1d"  # A 股仅支持日线
 
                 # 固定时间段配置
-                train_start_str = "2010-01-01"
+                train_start_str = "2016-01-01"
                 valid_start_str = "2022-01-01"
                 valid_end_str = "2023-12-31"
 
