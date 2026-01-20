@@ -386,7 +386,31 @@ class TradeManager:
 
                 # 5. Generate Report and Save
                 stats = engine.get_stats(pf)
-                self.log(f"Backtest Complete. Total Return: {stats['total_return']:.2%}, Sharpe: {stats['sharpe_ratio']:.2f}")
+                
+                # 回测完成，输出详细统计信息
+                self.log("=" * 40)
+                self.log("回测完成 - 统计摘要")
+                self.log("=" * 40)
+                self.log(f"  总收益率 (Total Return): {stats['total_return']:.2%}")
+                self.log(f"  夏普比率 (Sharpe):       {stats['sharpe_ratio']:.2f}")
+                self.log(f"  最大回撤 (Max Drawdown): {stats['max_drawdown']:.2%}")
+                self.log(f"  交易次数 (Trades):       {stats['total_trades']}")
+                self.log(f"  胜率 (Win Rate):         {stats['win_rate']:.2%}")
+                
+                # 输出更多 vectorbt 原生统计
+                if 'stats' in stats and stats['stats']:
+                    self.log("-" * 40)
+                    self.log("详细统计 (vectorbt):")
+                    for key, value in stats['stats'].items():
+                        if value is not None and key not in ['Start', 'End']:
+                            try:
+                                if isinstance(value, float):
+                                    self.log(f"  {key}: {value:.4f}")
+                                else:
+                                    self.log(f"  {key}: {value}")
+                            except:
+                                self.log(f"  {key}: {value}")
+                self.log("=" * 40)
 
                 # Save report
                 base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -398,52 +422,96 @@ class TradeManager:
 
                 # Generate VectorBT report with plots
                 try:
-                    import plotly.graph_objects as go
-
-                    # Create subplots
-                    fig = go.Figure()
-
-                    # 1. Equity Curve
-                    idx = pf.index()
-                    equity = pf.value()
-                    fig.add_trace(go.Scatter(
-                        x=idx,
-                        y=equity,
-                        mode='lines',
-                        name='Portfolio Value',
-                        line=dict(color='#2E86AB', width=2)
-                    ))
-
+                    # 使用 Vectorbt 原生绘图 (pf.plot())
+                    # 这将生成包含净值曲线、回撤、以及潜在买卖点标记的完整交互式图表
+                    self.log("生成 VectorBT 原生图表...")
+                    fig = pf.plot()
+                    
                     fig.update_layout(
-                        title=f"Backtest Report - {timestamp}",
-                        xaxis_title="Date",
-                        yaxis_title="Portfolio Value",
+                        title=dict(
+                            text=f"📊 VectorBT Backtest Report - {timestamp}",
+                            font=dict(size=20)
+                        ),
                         template="plotly_white",
-                        height=400
+                        height=800
                     )
 
                     # Save to HTML
                     fig.write_html(report_path)
+
+                    # 获取完整的 vectorbt stats
+                    full_stats = stats.get('stats', {})
+                    
+                    # 构建详细统计 HTML
+                    detailed_rows = ""
+                    if full_stats:
+                        for key, value in full_stats.items():
+                            if value is not None:
+                                try:
+                                    if isinstance(value, float):
+                                        formatted_val = f"{value:.4f}"
+                                    else:
+                                        formatted_val = str(value)
+                                    detailed_rows += f'<tr><td style="padding: 8px; border-bottom: 1px solid #eee;">{key}</td><td style="padding: 8px; border-bottom: 1px solid #eee;">{formatted_val}</td></tr>'
+                                except:
+                                    pass
 
                     # Append stats to the HTML file
                     with open(report_path, "r+") as f:
                         content = f.read()
                         # Insert stats before closing body
                         stats_html = f"""
-                        <div style="margin: 20px; padding: 20px; background: #f5f5f5; border-radius: 5px;">
-                            <h2>Performance Statistics</h2>
-                            <table style="border-collapse: collapse; width: 100%;">
-                                <tr style="background: #ddd;">
-                                    <th style="padding: 10px; text-align: left;">Metric</th>
-                                    <th style="padding: 10px; text-align: left;">Value</th>
-                                </tr>
-                                <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;">Total Return</td><td style="padding: 8px; border-bottom: 1px solid #ddd;">{stats['total_return']:.2%}</td></tr>
-                                <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;">Sharpe Ratio</td><td style="padding: 8px; border-bottom: 1px solid #ddd;">{stats['sharpe_ratio']:.2f}</td></tr>
-                                <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;">Max Drawdown</td><td style="padding: 8px; border-bottom: 1px solid #ddd;">{stats['max_drawdown']:.2%}</td></tr>
-                                <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;">Total Trades</td><td style="padding: 8px; border-bottom: 1px solid #ddd;">{stats['total_trades']}</td></tr>
-                                <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;">Win Rate</td><td style="padding: 8px; border-bottom: 1px solid #ddd;">{stats['win_rate']:.2%}</td></tr>
-                                <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;">Model</td><td style="padding: 8px; border-bottom: 1px solid #ddd;">{sig_gen.model_name}</td></tr>
-                                <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;">Top K</td><td style="padding: 8px; border-bottom: 1px solid #ddd;">{sig_gen.top_k}</td></tr>
+                        <style>
+                            .stats-container {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 20px; }}
+                            .stats-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 30px; }}
+                            .stat-card {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 10px; text-align: center; }}
+                            .stat-card.green {{ background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); }}
+                            .stat-card.red {{ background: linear-gradient(135deg, #eb3349 0%, #f45c43 100%); }}
+                            .stat-card.blue {{ background: linear-gradient(135deg, #2193b0 0%, #6dd5ed 100%); }}
+                            .stat-card .value {{ font-size: 28px; font-weight: bold; }}
+                            .stat-card .label {{ font-size: 12px; opacity: 0.9; margin-top: 5px; }}
+                            .details-table {{ width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+                            .details-table th {{ background: #2c3e50; color: white; padding: 12px; text-align: left; }}
+                            .details-table tr:hover {{ background: #f5f5f5; }}
+                            .section-title {{ color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; margin-top: 30px; }}
+                        </style>
+                        <div class="stats-container">
+                            <h2 class="section-title">📈 核心指标 Key Metrics</h2>
+                            <div class="stats-grid">
+                                <div class="stat-card {'green' if stats['total_return'] >= 0 else 'red'}">
+                                    <div class="value">{stats['total_return']:.2%}</div>
+                                    <div class="label">总收益率 Total Return</div>
+                                </div>
+                                <div class="stat-card blue">
+                                    <div class="value">{stats['sharpe_ratio']:.2f}</div>
+                                    <div class="label">夏普比率 Sharpe Ratio</div>
+                                </div>
+                                <div class="stat-card red">
+                                    <div class="value">{stats['max_drawdown']:.2%}</div>
+                                    <div class="label">最大回撤 Max Drawdown</div>
+                                </div>
+                                <div class="stat-card">
+                                    <div class="value">{stats['total_trades']}</div>
+                                    <div class="label">交易次数 Total Trades</div>
+                                </div>
+                                <div class="stat-card {'green' if stats['win_rate'] >= 0.5 else 'red'}">
+                                    <div class="value">{stats['win_rate']:.2%}</div>
+                                    <div class="label">胜率 Win Rate</div>
+                                </div>
+                            </div>
+                            
+                            <h2 class="section-title">⚙️ 回测配置 Backtest Config</h2>
+                            <table class="details-table" style="width: 50%; margin-bottom: 20px;">
+                                <tr><th>参数</th><th>值</th></tr>
+                                <tr><td style="padding: 8px;">模型 Model</td><td style="padding: 8px;">{sig_gen.model_name}</td></tr>
+                                <tr><td style="padding: 8px;">Top K</td><td style="padding: 8px;">{sig_gen.top_k}</td></tr>
+                                <tr><td style="padding: 8px;">股票数量 Symbols</td><td style="padding: 8px;">{len(symbols)}</td></tr>
+                            </table>
+                            
+                            <h2 class="section-title">📋 完整统计 Full Statistics (vectorbt)</h2>
+                            <table class="details-table">
+                                <tr><th>指标 Metric</th><th>值 Value</th></tr>
+                                {detailed_rows}
                             </table>
                         </div>
                         """
@@ -454,6 +522,7 @@ class TradeManager:
 
                 except Exception as e:
                     # Fallback to simple HTML if plotting fails
+                    self.log(f"生成图表失败，使用简化报告: {e}")
                     with open(report_path, "w") as f:
                         f.write(f"<html><head><style>body{{font-family:Arial;}} table{{border-collapse:collapse;width:50%;}} th,td{{padding:10px;text-align:left;border-bottom:1px solid #ddd;}} th{{background:#ddd;}}</style></head><body>")
                         f.write(f"<h1>Backtest Report</h1>")
@@ -469,10 +538,12 @@ class TradeManager:
                         f.write(f"</table></body></html>")
                 
                 self.state["last_backtest"] = {
-                    "tearsheet": f"/logs/backtest_{timestamp}.html", # Simplified path mapping
+                    "tearsheet": f"/reports/backtest_{timestamp}.html", # Path mapped to /reports endpoint
                     "timestamp": datetime.now().isoformat(),
                     "stats": {k: float(v) if isinstance(v, (int, float, np.number)) else str(v) for k,v in stats.items() if k != 'stats'}
                 }
+                
+                self.log("📊 回测结果已更新到前端页面，可在「回测状态」区域查看详情")
 
             except Exception as e:
                 import traceback

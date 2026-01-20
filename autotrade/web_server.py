@@ -279,6 +279,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     "strategy_config": tm.get_strategy_config(),
                     "training_status": tm.get_training_status().copy() if isinstance(tm.get_training_status(), dict) else tm.get_training_status(),
                     "data_sync_status": tm.get_data_sync_status().copy() if isinstance(tm.get_data_sync_status(), dict) else tm.get_data_sync_status(),
+                    "last_backtest": tm.state.get("last_backtest"),  # 回测结果
                 }
 
                 await websocket.send_json(state)
