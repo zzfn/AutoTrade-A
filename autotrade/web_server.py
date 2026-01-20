@@ -49,7 +49,7 @@ signal.signal = _thread_safe_signal
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """管理系统生命周期的上下文管理器"""
-    logger.info("正在启动 AutoTrade-A 系统...")
+    logger.info("正在启动 DeepAlpha 系统...")
 
     # 初始化 TradeManager（A 股模式，无需连接交易所）
     async def startup_task():
