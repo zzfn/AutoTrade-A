@@ -12,6 +12,8 @@ from autotrade.features import QlibFeatureGenerator
 from autotrade.models import LightGBMTrainer, ModelManager
 
 
+from autotrade.common.paths import MODELS_DIR
+
 class SignalGenerator:
     """
     Signal Generator responsible for:
@@ -26,7 +28,7 @@ class SignalGenerator:
         self,
         symbols: List[str],
         model_name: Optional[str] = None,
-        models_dir: str = "artifacts/models",
+        models_dir: str = str(MODELS_DIR),
         market: str = "us",
         lookback_period: int = 60,
         interval: str = "day",

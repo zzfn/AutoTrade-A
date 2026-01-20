@@ -15,6 +15,7 @@ from typing import Any, Optional
 import numpy as np
 import pandas as pd
 from loguru import logger
+from autotrade.common.paths import MODELS_DIR
 
 try:
     import lightgbm as lgb
@@ -39,7 +40,7 @@ class ModelTrainer(ABC):
 
     def __init__(
         self,
-        model_dir: str | Path = "artifacts/models",
+        model_dir: str | Path = MODELS_DIR,
         model_name: str = "model",
     ):
         self.model_dir = Path(model_dir)
@@ -112,7 +113,7 @@ class ModelTrainer(ABC):
             模型保存目录
         """
         if version is None:
-            version = datetime.now().strftime("%Y%m%d_%H%M%S")
+            version = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
         model_path = self.model_dir / f"{self.model_name}_{version}"
         model_path.mkdir(parents=True, exist_ok=True)
@@ -190,7 +191,7 @@ class LightGBMTrainer(ModelTrainer):
 
     def __init__(
         self,
-        model_dir: str | Path = "models",
+        model_dir: str | Path = MODELS_DIR,
         model_name: str = "lightgbm",
         params: dict | None = None,
         num_boost_round: int = 500,

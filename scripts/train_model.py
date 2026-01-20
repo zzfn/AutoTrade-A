@@ -32,6 +32,7 @@ from autotrade.data import QlibDataAdapter
 from autotrade.features import QlibFeatureGenerator
 from autotrade.models import LightGBMTrainer, ModelManager
 from autotrade.models.trainer import WalkForwardValidator
+from autotrade.common.paths import QLIB_DATA_DIR, MODELS_DIR
 
 
 def parse_args():
@@ -113,14 +114,14 @@ def parse_args():
     parser.add_argument(
         "--data-dir",
         type=str,
-        default="data/qlib",
-        help="Qlib 数据目录 (默认: data/qlib)",
+        default=str(QLIB_DATA_DIR),
+        help=f"Qlib 数据目录 (默认: {QLIB_DATA_DIR})",
     )
     parser.add_argument(
         "--models-dir",
         type=str,
-        default="models",
-        help="模型保存目录 (默认: models)",
+        default=str(MODELS_DIR),
+        help=f"模型保存目录 (默认: {MODELS_DIR})",
     )
     parser.add_argument(
         "--set-current",

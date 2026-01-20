@@ -14,7 +14,8 @@ import numpy as np
 import pandas as pd
 
 from autotrade.models import ModelManager
-from autotrade.common.config.loader import default_config
+from autotrade.config.loader import default_config
+from autotrade.common.paths import DATA_DIR, MODELS_DIR, LOGS_DIR, BACKTESTS_DIR
 
 class TradeManager:
     _instance = None
@@ -75,8 +76,7 @@ class TradeManager:
 
     def _get_cache_path(self) -> Path:
         """获取缓存文件路径"""
-        base_dir = Path(__file__).parent.parent
-        cache_dir = base_dir / "data" / "cache"
+        cache_dir = DATA_DIR / "cache"
         cache_dir.mkdir(parents=True, exist_ok=True)
         return cache_dir / "prediction_cache.json"
 
@@ -260,7 +260,7 @@ class TradeManager:
                 sig_gen = SignalGenerator(
                     symbols=symbols,
                     model_name=model_name,
-                    models_dir="models",
+                    models_dir=str(MODELS_DIR),
                     market="cn",
                     top_k=self.ml_config.get("top_k", 3)
                 )
@@ -414,12 +414,10 @@ class TradeManager:
                 self.log("=" * 40)
 
                 # Save report
-                base_dir = os.path.dirname(os.path.abspath(__file__))
-                logs_dir = os.path.normpath(os.path.join(base_dir, "..", "logs"))
-                os.makedirs(logs_dir, exist_ok=True)
+                BACKTESTS_DIR.mkdir(parents=True, exist_ok=True)
 
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                report_path = os.path.join(logs_dir, f"backtest_{timestamp}.html")
+                report_path = BACKTESTS_DIR / f"backtest_{timestamp}.html"
 
                 # Generate QuantStats report
                 try:
@@ -440,7 +438,7 @@ class TradeManager:
                         returns.index = returns.index.tz_localize(None)
 
                     # 保存为 HTML
-                    qs.reports.html(returns, output=report_path, title=f"AutoTrade-A Backtest Report {timestamp}")
+                    qs.reports.html(returns, output=str(report_path), title=f"AutoTrade-A Backtest Report {timestamp}")
                     self.log(f"已生成 QuantStats 报告: {report_path}")
 
                     # 提取详细交易记录供前端展示 (取最近 200 条以防数据量太大)
@@ -844,7 +842,7 @@ class TradeManager:
                 y_valid = target.loc[valid_mask]
 
                 trainer = LightGBMTrainer(
-                    model_name="lightgbm_rolling",
+                    model_name="lightgbm",
                     num_boost_round=300,
                 )
                 trainer.train(X_train, y_train, X_valid, y_valid)

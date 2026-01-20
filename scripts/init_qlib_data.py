@@ -17,6 +17,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from autotrade.data import QlibDataAdapter
+from autotrade.common.paths import QLIB_DATA_DIR
 from loguru import logger
 
 
@@ -49,8 +50,8 @@ def parse_args():
     parser.add_argument(
         "--data-dir",
         type=str,
-        default="data/qlib",
-        help="数据存储目录 (默认: data/qlib)",
+        default=str(QLIB_DATA_DIR),
+        help=f"数据存储目录 (默认: {QLIB_DATA_DIR})",
     )
     parser.add_argument(
         "--update-mode",

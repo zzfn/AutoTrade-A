@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Optional
 
 from loguru import logger
+from autotrade.common.paths import MODELS_DIR
 
 
 class ModelManager:
@@ -24,7 +25,7 @@ class ModelManager:
     4. 删除旧模型
     """
 
-    def __init__(self, models_dir: str | Path = "models"):
+    def __init__(self, models_dir: str | Path = MODELS_DIR):
         self.models_dir = Path(models_dir)
         self.models_dir.mkdir(parents=True, exist_ok=True)
 
@@ -228,7 +229,4 @@ class ModelManager:
 
 def get_model_manager() -> ModelManager:
     """获取全局模型管理器实例"""
-    # 使用项目根目录下的 artifacts/models 目录
-    base_dir = Path(__file__).parent.parent.parent
-    models_dir = base_dir / "artifacts" / "models"
-    return ModelManager(models_dir)
+    return ModelManager(MODELS_DIR)

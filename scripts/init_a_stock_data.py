@@ -19,9 +19,9 @@ import yaml
 from loguru import logger
 from tqdm import tqdm
 
+from autotrade.common.paths import PROJECT_ROOT, QLIB_DATA_DIR
 # 添加项目根目录到路径
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
+sys.path.insert(0, str(PROJECT_ROOT))
 
 from autotrade.data.providers import AKShareDataProvider
 from autotrade.data.qlib_adapter import QlibDataAdapter
@@ -66,7 +66,7 @@ def main():
     parser.add_argument(
         "--data-dir",
         type=str,
-        default="data/qlib",
+        default=str(QLIB_DATA_DIR),
         help="数据存储目录",
     )
     parser.add_argument(
@@ -87,7 +87,7 @@ def main():
     if args.symbols:
         symbols = [s.strip().upper() for s in args.symbols.split(",")]
     else:
-        config_path = project_root / "configs" / "universe.yaml"
+        config_path = PROJECT_ROOT / "configs" / "universe.yaml"
         symbols = load_universe_config(config_path)
         if not symbols:
             logger.error("未指定股票，请使用 --symbols 或在 configs/universe.yaml 中配置 cn_stocks")

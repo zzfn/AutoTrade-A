@@ -83,6 +83,7 @@ app = FastAPI(lifespan=lifespan)
 
 
 # Paths
+from autotrade.common.paths import BACKTESTS_DIR
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 UI_DIR = os.path.join(BASE_DIR, "ui")
 TEMPLATES_DIR = os.path.join(UI_DIR, "templates")
@@ -92,7 +93,7 @@ STATIC_DIR = os.path.join(UI_DIR, "static")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 app.mount(
     "/reports",
-    StaticFiles(directory=os.path.join(os.path.dirname(BASE_DIR), "logs")),
+    StaticFiles(directory=str(BACKTESTS_DIR)),
     name="reports",
 )
 templates = Jinja2Templates(directory=TEMPLATES_DIR)

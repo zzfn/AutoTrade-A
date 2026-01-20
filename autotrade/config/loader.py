@@ -7,8 +7,8 @@ import yaml
 class ConfigLoader:
     def __init__(self, config_path: str = "configs/universe.yaml"):
         # Resolve absolute path relative to project root if possible, or use as is
-        # Assuming run from project root
-        self.config_path = Path(config_path)
+        from autotrade.common.paths import PROJECT_ROOT
+        self.config_path = (PROJECT_ROOT / config_path).resolve()
         self._config = self._load()
 
     def _load(self) -> dict[str, Any]:
