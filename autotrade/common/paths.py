@@ -18,3 +18,8 @@ REPORTS_DIR = OUTPUTS_DIR / "reports"
 
 # Config Paths
 CONFIG_DIR = PROJECT_ROOT / "autotrade" / "config"
+
+# UI Paths
+UI_DIR = PROJECT_ROOT / "autotrade" / "ui"
+TEMPLATES_DIR = UI_DIR / "templates"
+STATIC_DIR = UI_DIR / "static"

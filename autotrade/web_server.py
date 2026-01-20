@@ -83,14 +83,13 @@ app = FastAPI(lifespan=lifespan)
 
 
 # Paths
-from autotrade.common.paths import BACKTESTS_DIR
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-UI_DIR = os.path.join(BASE_DIR, "ui")
-TEMPLATES_DIR = os.path.join(UI_DIR, "templates")
-STATIC_DIR = os.path.join(UI_DIR, "static")
+from autotrade.common.paths import BACKTESTS_DIR, STATIC_DIR, TEMPLATES_DIR
 
 # Mounts
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+# Ensure reports directory exists before mounting
+BACKTESTS_DIR.mkdir(parents=True, exist_ok=True)
 app.mount(
     "/reports",
     StaticFiles(directory=str(BACKTESTS_DIR)),
