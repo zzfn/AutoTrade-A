@@ -29,19 +29,16 @@
           const dates = data.dates;
           const values = data.values; // [open, close, low, high, vol]
 
-          // Calculate MA
-          const calculateMA = (dayCount) => {
-            var result = [];
-            for (var i = 0, len = values.length; i < len; i++) {
-                if (i < dayCount) {
-                    result.push('-');
-                    continue;
-                }
-                var sum = 0;
-                for (var j = 0; j < dayCount; j++) {
-                    sum += values[i - j][1]; // close
-                }
-                result.push((sum / dayCount).toFixed(2));
+          // Calculate EMA
+          const calculateEMA = (dayCount) => {
+            let result = [];
+            let k = 2 / (dayCount + 1);
+            let ema = values[0][1]; // Initial EMA is the first closing price
+            result.push(ema.toFixed(2));
+
+            for (let i = 1, len = values.length; i < len; i++) {
+                ema = (values[i][1] * k) + (ema * (1 - k));
+                result.push(ema.toFixed(2));
             }
             return result;
           };
@@ -59,7 +56,7 @@
                 axisPointer: { type: 'cross' }
             },
             legend: {
-                data: ['K线', 'MA5', 'MA10', 'MA20'],
+                data: ['K线', 'EMA20'],
                 top: 10,
                 textStyle: { color: '#94a3b8' }
             },
@@ -123,25 +120,12 @@
                     }
                 },
                 {
-                    name: 'MA5',
+                    name: 'EMA20',
                     type: 'line',
-                    data: calculateMA(5),
+                    data: calculateEMA(20),
                     smooth: true,
-                    lineStyle: { opacity: 0.5 }
-                },
-                {
-                    name: 'MA10',
-                    type: 'line',
-                    data: calculateMA(10),
-                    smooth: true,
-                    lineStyle: { opacity: 0.5 }
-                },
-                {
-                    name: 'MA20',
-                    type: 'line',
-                    data: calculateMA(20),
-                    smooth: true,
-                    lineStyle: { opacity: 0.5 }
+                    lineStyle: { opacity: 0.8, width: 1.5, color: '#f59e0b' },
+                    symbol: 'none'
                 },
                 {
                     name: 'Volume',
@@ -315,35 +299,41 @@
                 </span>
               )}
             </div>
-            <div className="flex items-center gap-2">
-              <div className="flex bg-slate-900/50 p-1 rounded-lg border border-slate-700/50">
-                {["ALL", "MAIN", "GEM", "STAR"].map((type) => (
-                  <button
-                    key={type}
-                    onClick={() => setFilterBoard(type)}
-                    className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${
-                      filterBoard === type
-                        ? "bg-cyan-500 text-slate-900 shadow-lg shadow-cyan-500/20"
-                        : "text-slate-400 hover:text-slate-200 hover:bg-slate-800"
-                    }`}
-                  >
-                    {type === "ALL"
-                      ? "全部"
-                      : type === "MAIN"
-                        ? "主板"
-                        : type === "GEM"
-                          ? "创业"
-                          : "科创"}
-                  </button>
-                ))}
+            <div className="flex items-center gap-4">
+              <div className="hidden lg:flex items-center gap-1.5 text-[10px] text-slate-500 bg-slate-800/40 px-2 py-1 rounded-md border border-slate-700/30">
+                <i className="fas fa-mouse-pointer text-cyan-500/50"></i>
+                <span>点击卡片查看 K 线图</span>
               </div>
-              <button
-                onClick={() => fetchPredictions(true)}
-                disabled={loadingPredictions}
-                className="px-3 py-1.5 bg-cyan-500/20 text-cyan-400 rounded-lg text-xs font-medium hover:bg-cyan-500/30 transition-colors disabled:opacity-50"
-              >
-                {loadingPredictions ? "加载中..." : "刷新"}
-              </button>
+              <div className="flex items-center gap-2">
+                <div className="flex bg-slate-900/50 p-1 rounded-lg border border-slate-700/50">
+                  {["ALL", "MAIN", "GEM", "STAR"].map((type) => (
+                    <button
+                      key={type}
+                      onClick={() => setFilterBoard(type)}
+                      className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${
+                        filterBoard === type
+                          ? "bg-cyan-500 text-slate-900 shadow-lg shadow-cyan-500/20"
+                          : "text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+                      }`}
+                    >
+                      {type === "ALL"
+                        ? "全部"
+                        : type === "MAIN"
+                          ? "主板"
+                          : type === "GEM"
+                            ? "创业"
+                            : "科创"}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  onClick={() => fetchPredictions(true)}
+                  disabled={loadingPredictions}
+                  className="px-3 py-1.5 bg-cyan-500/20 text-cyan-400 rounded-lg text-xs font-medium hover:bg-cyan-500/30 transition-colors disabled:opacity-50"
+                >
+                  {loadingPredictions ? "加载中..." : "刷新"}
+                </button>
+              </div>
             </div>
           </div>
 
@@ -357,8 +347,8 @@
           ) : filteredPredictions.length > 0 ? (
             <div className="space-y-6">
               {/* Top Recommendations Section */}
-              <div className="bg-gradient-to-r from-emerald-500/10 to-transparent p-5 rounded-2xl border border-emerald-500/20 relative overflow-hidden">
-                <div className="absolute top-0 right-0 p-4 opacity-10">
+              <div className="bg-gradient-to-r from-emerald-500/10 to-transparent p-5 rounded-2xl border border-emerald-500/20 relative">
+                <div className="absolute top-0 right-0 p-4 opacity-10 overflow-hidden pointer-events-none">
                   <i className="fas fa-crown text-6xl text-emerald-400"></i>
                 </div>
                 <div className="flex items-center gap-2 mb-4 relative z-10">
@@ -382,10 +372,19 @@
                     <div
                       key={i}
                       onClick={() => setSelectedStock(pred.symbol)}
-                      className="p-4 rounded-xl border bg-slate-900/60 border-emerald-500/40 shadow-lg shadow-emerald-500/5 hover:scale-105 transition-transform duration-300 relative group cursor-pointer"
+                      className="p-4 rounded-xl border bg-slate-900/60 border-emerald-500/40 shadow-lg shadow-emerald-500/5 hover:scale-105 active:scale-95 transition-all duration-300 relative group cursor-pointer"
                     >
+                      {/* Rank Badge - Kept outside, no overflow-hidden on parent */}
                       <div className="absolute -top-3 -right-3 w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center text-slate-900 font-bold text-sm shadow-md z-20">
                         {i + 1}
+                      </div>
+
+                      {/* Center Hover Overlay */}
+                      <div className="absolute inset-0 bg-emerald-500/5 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none rounded-xl z-10">
+                        <div className="bg-slate-900/90 px-3 py-1.5 rounded-full border border-emerald-500/30 text-[10px] text-emerald-400 font-bold transform translate-y-4 group-hover:translate-y-0 transition-transform flex items-center gap-2 shadow-xl">
+                          <i className="fas fa-chart-line"></i>
+                          查看 K 线
+                        </div>
                       </div>
                       <div className="flex justify-between items-start mb-2">
                         <div className="font-bold text-slate-100 truncate pr-2 text-lg">
@@ -474,15 +473,20 @@
                   {otherPicks.map((pred, i) => (
                     <div
                       key={i}
-                      className={`p-3 rounded-lg border flex flex-col justify-between ${
+                      title="点击查看 K 线图"
+                      className={`p-3 rounded-lg border flex flex-col justify-between group ${
                         pred.signal === "BUY"
                           ? "bg-emerald-500/5 border-emerald-500/20 hover:border-emerald-500/40"
                           : pred.signal === "SELL"
                             ? "bg-rose-500/5 border-rose-500/20 hover:border-rose-500/40"
                             : "bg-slate-800/30 border-slate-700/30 hover:border-slate-600/50"
-                      } transition-colors cursor-pointer`}
+                      } transition-all cursor-pointer relative active:scale-95`}
                       onClick={() => setSelectedStock(pred.symbol)}
                     >
+                      {/* Subtle hover icon */}
+                      <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <i className="fas fa-chart-bar text-[10px] text-slate-500"></i>
+                      </div>
                       <div>
                         <div className="flex justify-between items-center mb-1">
                           <div
