@@ -93,3 +93,39 @@ const useWebSocket = (url) => {
 
   return { data, status };
 };
+
+const getBoardInfo = (symbol) => {
+  if (!symbol) return null;
+
+  if (symbol.startsWith("688")) {
+    return {
+      name: "科创板",
+      color: "bg-purple-500/20 text-purple-400 border-purple-500/30",
+      dotColor: "bg-purple-400",
+    };
+  } else if (symbol.startsWith("300") || symbol.startsWith("301")) {
+    return {
+      name: "创业板",
+      color: "bg-orange-500/20 text-orange-400 border-orange-500/30",
+      dotColor: "bg-orange-400",
+    };
+  } else if (symbol.startsWith("4") || symbol.startsWith("8")) {
+    return {
+      name: "北交所",
+      color: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
+      dotColor: "bg-cyan-400",
+    };
+  }
+
+  return {
+    name: "主板",
+    color: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+    dotColor: "bg-blue-400",
+  };
+};
+
+window.Card = Card;
+window.Button = Button;
+window.StatusBadge = StatusBadge;
+window.useWebSocket = useWebSocket;
+window.getBoardInfo = getBoardInfo;
