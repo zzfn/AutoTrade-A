@@ -20,7 +20,18 @@ class ConfigLoader:
 
     @property
     def symbols(self) -> list[str]:
+        # Always reload to pick up changes
+        self._reload_if_changed()
         return self._config.get("symbols", [])
+
+    def _reload_if_changed(self):
+        try:
+            current_mtime = self.config_path.stat().st_mtime
+            if not hasattr(self, "_last_mtime") or current_mtime > self._last_mtime:
+                self._config = self._load()
+                self._last_mtime = current_mtime
+        except Exception:
+            pass  # Keep old config if reload fails
 
     @property
     def timeframe(self) -> str:

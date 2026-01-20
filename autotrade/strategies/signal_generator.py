@@ -216,6 +216,24 @@ class SignalGenerator:
             
         latest_date = features.index.get_level_values(0).max()
         
+        # Check if the latest date has enough coverage
+        # (Prevent issue where 1 stock has "today's" data while others only have "yesterday's")
+        date_counts = features.index.get_level_values(0).value_counts().sort_index()
+        
+        if not date_counts.empty:
+            # We want a date that covers at least 20% of the max coverage seen
+            max_coverage = date_counts.max()
+            threshold = max(5, max_coverage * 0.2)
+            
+            valid_dates = date_counts[date_counts >= threshold].index
+            
+            if not valid_dates.empty:
+                robust_latest = valid_dates.max()
+                
+                if robust_latest < latest_date:
+                    logger.warning(f"Data Mismatch: Ignored incomplete date {latest_date} ({date_counts[latest_date]} stocks), using {robust_latest} ({date_counts[robust_latest]} stocks)")
+                    latest_date = robust_latest
+        
         # 3. Filter valid symbols and prepare batch
         valid_rows = []
         valid_symbols = []

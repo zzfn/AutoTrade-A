@@ -1,6 +1,7 @@
 symbols:
-  - "002050.SZ"
-  - "601288.SH"
-  - "600021.SH"
+  # - "002050.SZ"
+  # - "601288.SH"
+  # - "600021.SH"
   # Use "ALL" to include all A-share stocks (excluding ST)
   # - "ALL"
+  - "CSI300"
