@@ -249,6 +249,16 @@ async def get_data_inventory():
         return {"status": "error", "message": str(e)}
 
 
+@app.get("/api/data/kline")
+async def get_kline(symbol: str, days: int = 365):
+    """获取 K 线数据"""
+    try:
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, lambda: tm.get_kline_data(symbol, days))
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
 # ==================== 模型管理页面 ====================
 
 
