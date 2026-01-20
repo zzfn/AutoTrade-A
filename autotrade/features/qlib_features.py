@@ -12,6 +12,9 @@ import pandas as pd
 from loguru import logger
 from tqdm import tqdm
 
+from autotrade.features.smc import calculate_smc_features
+from autotrade.features.price_action import calculate_price_action_features
+
 
 class BaseFeatureGenerator(ABC):
     """特征生成器基类"""
@@ -32,6 +35,8 @@ class QlibFeatureGenerator(BaseFeatureGenerator):
     - 波动率因子
     - 成交量因子
     - 技术指标因子（RSI, MACD 等）
+    - SMC 因子 (FVG, BOS, OB)
+    - 价格行为因子 (Candlestick Patterns)
     """
 
     def __init__(
@@ -176,6 +181,16 @@ class QlibFeatureGenerator(BaseFeatureGenerator):
             features[f"$bb_lower_{w}"] = sma - 2 * std
             features[f"$bb_width_{w}"] = (2 * std) / sma
             features[f"$bb_position_{w}"] = (close - sma) / (2 * std)
+
+        # SMC 因子
+        smc_df = calculate_smc_features(df)
+        for col in smc_df.columns:
+            features[col] = smc_df[col]
+
+        # 价格行为因子
+        pa_df = calculate_price_action_features(df)
+        for col in pa_df.columns:
+            features[col] = pa_df[col]
 
         # 构建 DataFrame
         result = pd.DataFrame(features, index=df.index)
