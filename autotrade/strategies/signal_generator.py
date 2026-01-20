@@ -214,6 +214,8 @@ class SignalGenerator:
         if features.empty:
             return []
             
+        latest_date = features.index.get_level_values(0).max()
+        
         # 3. Filter valid symbols and prepare batch
         valid_rows = []
         valid_symbols = []
@@ -223,6 +225,9 @@ class SignalGenerator:
         logger.info("Filtering valid candidates...")
         
         provider = self._get_cn_provider()
+        
+        # Iterate over symbols present in the data
+        symbols = features.index.get_level_values("symbol").unique()
         
         for symbol in symbols:
             try:

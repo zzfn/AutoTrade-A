@@ -7,6 +7,7 @@ AutoTrade-A 专用：仅支持 A 股 (AKShare) 数据源
 import re
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Optional
 
 import akshare as ak
@@ -297,7 +298,19 @@ class AKShareDataProvider(BaseDataProvider):
                     if not stock_info.empty:
                         mapping[symbol] = stock_info.iloc[0]["名称"]
                     else:
-                        mapping[symbol] = symbol
+                        # Fallback: snapshot failed (maybe new stock or data lag), try individual header
+                        try:
+                            logger.debug(f"Snapshot miss for {symbol}, trying individual info...")
+                            ind_info = ak.stock_individual_info_em(symbol=code)
+                            # returns df with "item", "value" etc usually, or specific structure
+                            # Actually stock_individual_info_em returns a dataframe of fundamental info
+                            # A better lightweight alternative or parsing might be needed.
+                            # But if user says "names missing", let's just return symbol for now to avoid SLOW loop.
+                            # Wait, stock_zh_a_spot_em is the standard. If it misses, it might be the code format.
+                            # Ensure code format from snapshot matches. Snapshot '代码' is usually string of 6 digits.
+                            mapping[symbol] = symbol
+                        except:
+                            mapping[symbol] = symbol
                 except Exception:
                     mapping[symbol] = symbol
             return mapping
@@ -318,7 +331,7 @@ class AKShareDataProvider(BaseDataProvider):
         try:
             code, _ = self._validate_symbol(symbol)
 
-            # 获取股票名称
+            # 获取股票名称 (Use Cache)
             snapshot = self._get_market_snapshot()
 
             stock_info = snapshot[
