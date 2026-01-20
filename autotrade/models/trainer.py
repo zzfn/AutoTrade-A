@@ -226,6 +226,9 @@ class LightGBMTrainer(ModelTrainer):
         Returns:
             self
         """
+        if np.isinf(y_train).any():
+            raise ValueError("训练目标包含 Inf 值，请检查数据预处理")
+        
         logger.info(
             f"开始训练 LightGBM: {len(X_train)} 样本, {len(X_train.columns)} 特征"
         )

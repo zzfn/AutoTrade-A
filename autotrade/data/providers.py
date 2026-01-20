@@ -521,6 +521,50 @@ class AKShareDataProvider(BaseDataProvider):
             logger.error(f"获取指数 {index_code} 成分股失败: {e}")
             return []
 
+    def get_all_stock_symbols(self, exclude_st: bool = True) -> list[str]:
+        """
+        获取全市场股票代码
+
+        Args:
+            exclude_st: 是否排除 ST 股票
+
+        Returns:
+            股票代码列表
+        """
+        try:
+            snapshot = self._get_market_snapshot()
+            
+            if snapshot.empty:
+                logger.warning("全市场快照为空，无法获取股票列表")
+                return []
+
+            # 过滤 ST
+            if exclude_st:
+                snapshot = snapshot[
+                    ~snapshot["名称"].str.contains("ST", case=False, na=False)
+                ]
+            
+            symbols = []
+            for _, row in snapshot.iterrows():
+                code = str(row["代码"])
+                # 简单推断后缀 (snapshot usually has 6 digit code)
+                if code.startswith(("6", "9")):
+                    suffix = "SH"
+                elif code.startswith(("0", "3")):
+                    suffix = "SZ"
+                elif code.startswith(("4", "8")):
+                    suffix = "BJ"
+                else:
+                    suffix = "SZ"
+                
+                symbols.append(f"{code}.{suffix}")
+                
+            return symbols
+            
+        except Exception as e:
+            logger.error(f"获取全市场股票列表失败: {e}")
+            return []
+
 class DataProviderFactory:
     """
     数据提供者工厂 - A 股专用

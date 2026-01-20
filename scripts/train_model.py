@@ -201,8 +201,8 @@ def prepare_data(
         target = df["close"].pct_change(target_horizon).shift(-target_horizon)
         target = target.reindex(features.index)
 
-    # 移除 NaN
-    valid_mask = ~(features.isna().any(axis=1) | target.isna())
+    # 移除 NaN 和 Inf
+    valid_mask = ~(features.isna().any(axis=1) | target.isna() | np.isinf(target))
     features = features[valid_mask]
     target = target[valid_mask]
 

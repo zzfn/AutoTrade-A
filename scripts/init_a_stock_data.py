@@ -93,6 +93,37 @@ def main():
             logger.error("未指定股票，请使用 --symbols 或在 configs/universe.yaml 中配置 cn_stocks")
             sys.exit(1)
 
+    # Expand symbols (handle ALL, CSI300 etc)
+    expanded_symbols = []
+    # Instantiate provider temporarily for resolution
+    temp_provider = AKShareDataProvider(adjust=args.adjust)
+    
+    for s in symbols:
+        s_upper = s.upper()
+        if s_upper in ["ALL", "FULL", "FULL_MARKET"]:
+            logger.info("正在获取全市场股票列表 (排除 ST)...")
+            all_stocks = temp_provider.get_all_stock_symbols(exclude_st=True)
+            expanded_symbols.extend(all_stocks)
+        elif s_upper in ["CSI300", "000300"]:
+             # Simple alias handling
+             cons = temp_provider.get_index_constituents("000300")
+             expanded_symbols.extend(cons)
+        elif s_upper in ["CSI500", "000905"]:
+             cons = temp_provider.get_index_constituents("000905")
+             expanded_symbols.extend(cons)
+        elif s_upper in ["SSE50", "000016"]:
+             cons = temp_provider.get_index_constituents("000016")
+             expanded_symbols.extend(cons)
+        else:
+            expanded_symbols.append(s)
+            
+    # Deduplicate
+    symbols = sorted(list(set(expanded_symbols)))
+    
+    if not symbols:
+         logger.error("解析后股票列表为空")
+         sys.exit(1)
+
     logger.info(f"📊 初始化A股数据")
     logger.info(f"   股票数量: {len(symbols)}")
     logger.info(f"   日期范围: {args.start_date} ~ {args.end_date}")

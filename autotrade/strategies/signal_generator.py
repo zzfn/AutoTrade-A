@@ -273,6 +273,11 @@ class SignalGenerator:
             for i, symbol in enumerate(valid_symbols):
                 score = float(scores[i])
                 
+                # Sanity check for exploded gradients/corrupted model
+                if abs(score) > 1e10:
+                    logger.warning(f"Abnormal score detected for {symbol}: {score}, ignoring.")
+                    score = 0.0
+                
                 if score > 0.01:
                     signal = "BUY"
                 elif score < -0.01:

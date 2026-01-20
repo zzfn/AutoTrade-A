@@ -142,6 +142,18 @@ class TradeManager:
                         self.log(f"警告：无法获取 {symbol} 的成分股")
                 except Exception as e:
                     self.log(f"获取 {symbol} 成分股失败: {e}")
+            elif symbol_lower in ["all", "full", "full_market"]:
+                # 获取全市场股票（排除 ST）
+                self.log(f"正在获取全市场股票列表 (排除 ST)...")
+                try:
+                    all_symbols = provider.get_all_stock_symbols(exclude_st=True)
+                    if all_symbols:
+                        self.log(f"获取到 {len(all_symbols)} 只股票")
+                        resolved.extend(all_symbols)
+                    else:
+                        self.log("警告：全市场股票列表为空")
+                except Exception as e:
+                    self.log(f"获取全市场股票失败: {e}")
             else:
                 # 直接添加股票代码
                 resolved.append(symbol.upper())
@@ -753,10 +765,10 @@ class TradeManager:
                     )
                     target = target.reindex(features.index)
 
-                # 移除 NaN
+                # 移除 NaN 和 Inf
                 import numpy as np
 
-                valid_mask = ~(features.isna().any(axis=1) | target.isna())
+                valid_mask = ~(features.isna().any(axis=1) | target.isna() | np.isinf(target))
                 features = features[valid_mask]
                 target = target[valid_mask]
                 self.training_status["progress"] = 50

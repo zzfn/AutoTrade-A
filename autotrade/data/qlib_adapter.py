@@ -140,6 +140,13 @@ class QlibDataAdapter:
 
                 # 确保时间排序
                 symbol_df = symbol_df.sort_index()
+                
+                # 过滤无效数据
+                if "close" in symbol_df.columns:
+                    symbol_df = symbol_df[symbol_df["close"] > 1e-4]
+                
+                if symbol_df.empty:
+                    continue
 
                 # 存储到 Qlib 格式
                 self._store_symbol_data(symbol, symbol_df, update_mode)
@@ -345,8 +352,15 @@ class QlibDataAdapter:
         result = pd.concat(all_data, ignore_index=True)
         result = result.set_index(["timestamp", "symbol"])
         # 去重以保证 (timestamp, symbol) 唯一，避免 unstack 报错
+        # 去重以保证 (timestamp, symbol) 唯一，避免 unstack 报错
         if result.index.has_duplicates:
             result = result[~result.index.duplicated(keep="last")]
+        
+        # 过滤无效数据 (Close <= 0)
+        # 这通常发生在未上市填充 0 或严重的数据错误时
+        if "close" in result.columns:
+            result = result[result["close"] > 1e-4]
+
         result = result.sort_index()
 
         return result
