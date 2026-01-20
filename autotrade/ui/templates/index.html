@@ -117,8 +117,20 @@
                           <div className="font-bold text-slate-100 truncate pr-2 text-lg">
                             {pred.name}
                           </div>
-                          <div className="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">
-                            {pred.symbol}
+                          <div className="flex items-center gap-1">
+                            {(() => {
+                              const board = getBoardInfo(pred.symbol);
+                              return board ? (
+                                <span
+                                  className={`text-[9px] px-1 py-0.5 rounded border ${board.color}`}
+                                >
+                                  {board.name}
+                                </span>
+                              ) : null;
+                            })()}
+                            <div className="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">
+                              {pred.symbol}
+                            </div>
                           </div>
                         </div>
 
@@ -206,9 +218,21 @@
                             </div>
                           </div>
                           <div className="flex justify-between items-center mb-2">
-                            <span className="text-[10px] text-slate-500 font-mono">
-                              {pred.symbol}
-                            </span>
+                            <div className="flex items-center gap-1">
+                              <span className="text-[10px] text-slate-500 font-mono">
+                                {pred.symbol}
+                              </span>
+                              {(() => {
+                                const board = getBoardInfo(pred.symbol);
+                                return board ? (
+                                  <span
+                                    className={`text-[8px] px-1 rounded border ${board.color} scale-90 origin-left`}
+                                  >
+                                    {board.name}
+                                  </span>
+                                ) : null;
+                              })()}
+                            </div>
                             <span
                               className="text-[10px] text-slate-400 font-mono"
                               title={`数据日期: ${pred.date}`}

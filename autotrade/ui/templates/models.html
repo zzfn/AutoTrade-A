@@ -188,11 +188,15 @@
                     当前配置标的池 (Universe)
                   </div>
                   <div className="flex flex-wrap gap-2 p-3 bg-slate-900/50 border border-slate-700/50 rounded-xl min-h-[44px]">
-                    {strategyConfig?.universe_symbols?.map((s, idx) => (
-                      <span key={idx} className="px-2 py-1 bg-purple-500/10 text-purple-300 rounded text-[10px] font-mono border border-purple-500/20">
+                    {strategyConfig?.universe_symbols?.map((s, idx) => {
+                      const board = typeof getBoardInfo !== 'undefined' ? getBoardInfo(s) : null;
+                      return (
+                      <span key={idx} className="flex items-center gap-1 px-2 py-1 bg-purple-500/10 text-purple-300 rounded text-[10px] font-mono border border-purple-500/20">
+                        {board && <span className={`w-1.5 h-1.5 rounded-full ${board.dotColor}`}></span>}
                         {s}
                       </span>
-                    )) || <span className="text-slate-600 text-[10px]">未配置</span>}
+                    )})}
+                    {!strategyConfig?.universe_symbols && <span className="text-slate-600 text-[10px]">未配置</span>}
                   </div>
                   <p className="mt-2 text-[10px] text-slate-500 leading-relaxed italic">
                     提示：标的池已在 universe.yaml 中固定配置。
