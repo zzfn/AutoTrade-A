@@ -117,6 +117,12 @@ async def read_data_center(request: Request):
     return templates.TemplateResponse(request, "data_center.html")
 
 
+@app.get("/news", response_class=HTMLResponse)
+async def read_news(request: Request):
+    """财经新闻页面"""
+    return templates.TemplateResponse(request, "news.html")
+
+
 @app.post("/api/run_backtest")
 async def run_backtest(request: Request):
     params = await request.json()
@@ -255,6 +261,16 @@ async def get_kline(symbol: str, days: int = 365):
     try:
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, lambda: tm.get_kline_data(symbol, days))
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@app.get("/api/data/news")
+async def get_news(limit: int = 50):
+    """获取财经新闻"""
+    try:
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, lambda: tm.get_latest_news(limit=limit))
     except Exception as e:
         return {"status": "error", "message": str(e)}
 

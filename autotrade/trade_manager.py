@@ -16,6 +16,7 @@ import pandas as pd
 from autotrade.models import ModelManager
 from autotrade.config.loader import default_config
 from autotrade.common.paths import DATA_DIR, MODELS_DIR, LOGS_DIR, BACKTESTS_DIR
+from autotrade.data.news import NewsManager
 
 class TradeManager:
     _instance = None
@@ -57,6 +58,7 @@ class TradeManager:
             "rebalance_period": 1,
         }
         self.model_manager = ModelManager()
+        self.news_manager = NewsManager()
 
         # 模型训练状态
         self.training_status = {
@@ -405,6 +407,15 @@ class TradeManager:
             import traceback
             traceback.print_exc()
             return {"status": "error", "message": str(e)}
+
+    def get_latest_news(self, limit: int = 50) -> dict:
+        """获取最新财经新闻"""
+        try:
+            data = self.news_manager.get_latest_news(limit=limit)
+            return {"status": "success", "data": data}
+        except Exception as e:
+            self.log(f"获取新闻失败: {e}")
+            return {"status": "error", "message": str(e), "data": []}
 
     def run_backtest(self, params: dict):
         """Run a backtest using vectorbt in a separate thread."""

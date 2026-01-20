@@ -1,0 +1,123 @@
+{% extends "layout.html" %} {% block content %}
+<div id="news-root"></div>
+{% endblock %} {% block scripts %}
+<script type="text/babel">
+  const { useState, useEffect } = React;
+
+  const NewsPage = () => {
+    const [news, setNews] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const [lastUpdated, setLastUpdated] = useState(null);
+
+    const fetchNews = async () => {
+      setLoading(true);
+      try {
+        const res = await fetch("/api/data/news?limit=100");
+        const data = await res.json();
+
+        if (data.status === "success") {
+          setNews(data.data);
+          setLastUpdated(new Date());
+          setError(null);
+        } else {
+          setError(data.message || "Failed to fetch news");
+        }
+      } catch (err) {
+        setError(err.toString());
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    useEffect(() => {
+      fetchNews();
+      // Auto refresh every 60 seconds
+      const interval = setInterval(fetchNews, 60000);
+      return () => clearInterval(interval);
+    }, []);
+
+    return (
+      <div className="space-y-6 fade-in">
+        <div className="flex justify-between items-center">
+          <div>
+            <h2 className="text-2xl font-bold text-slate-100">
+              <i className="fas fa-newspaper text-cyan-400 mr-2"></i>
+              财经电报
+            </h2>
+            <p className="text-slate-400 text-sm mt-1">
+              实时追踪市场动态，捕捉关键信息
+            </p>
+          </div>
+
+          <div className="flex items-center gap-4">
+            {lastUpdated && (
+              <span className="text-xs text-slate-500 font-mono">
+                Updated: {lastUpdated.toLocaleTimeString()}
+              </span>
+            )}
+            <button
+              onClick={fetchNews}
+              disabled={loading}
+              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm rounded-lg transition-colors border border-slate-700 flex items-center gap-2"
+            >
+              <i
+                className={`fas fa-sync-alt ${loading ? "animate-spin" : ""}`}
+              ></i>
+              刷新
+            </button>
+          </div>
+        </div>
+
+        {error && (
+          <div className="bg-rose-500/10 border border-rose-500/20 text-rose-400 p-4 rounded-xl">
+            Error: {error}
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 gap-4">
+          {loading && news.length === 0 ? (
+            <div className="flex justify-center py-20">
+              <div className="w-10 h-10 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin"></div>
+            </div>
+          ) : (
+            <div className="relative border-l-2 border-slate-700 ml-3 md:ml-6 space-y-8 py-4">
+              {news.map((item, index) => (
+                <div key={index} className="relative pl-6 md:pl-8">
+                  {/* Timeline Dot */}
+                  <div className="absolute -left-[9px] top-1 w-4 h-4 rounded-full bg-slate-900 border-2 border-cyan-500 box-content"></div>
+
+                  <div className="glass p-5 rounded-xl border border-slate-700/50 hover:border-cyan-500/30 transition-colors group">
+                    <div className="flex justify-between items-start mb-2">
+                      <span className="text-xs font-mono text-cyan-500 bg-cyan-500/10 px-2 py-0.5 rounded border border-cyan-500/20">
+                        {item.time.split(" ")[1] || item.time}
+                      </span>
+                      <span className="text-[10px] text-slate-500 font-mono select-none">
+                        ID: {item.id}
+                      </span>
+                    </div>
+                    <div className="prose prose-invert prose-sm max-w-none">
+                      <div className="text-slate-200 text-base leading-relaxed whitespace-pre-line">
+                        {item.content}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              {news.length === 0 && !loading && (
+                <div className="text-center text-slate-500 py-10">
+                  暂无新闻数据
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const root = ReactDOM.createRoot(document.getElementById("news-root"));
+  root.render(<NewsPage />);
+</script>
+{% endblock %}
