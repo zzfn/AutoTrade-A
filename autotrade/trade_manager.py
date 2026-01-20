@@ -124,6 +124,7 @@ class TradeManager:
             "sse50": "000016",  # 上证50
             "csi300": "000300",  # 沪深300
             "csi500": "000905",  # 中证500
+            "csi800": "000906",  # 中证800
             "sz50": "399330",    # 深证50
         }
 
@@ -742,6 +743,34 @@ class TradeManager:
 
                 if df.empty:
                     raise ValueError("没有可用的数据")
+
+                # === 过滤次新股 (新股效应) ===
+                # 剔除上市不满 60 天的样本
+                try:
+                    self.training_status["message"] = "过滤次新股..."
+                    min_listed_days = train_config.get("min_listed_days", 60)
+                    
+                    # 临时重置索引以进行分组计算
+                    # df index is (timestamp, symbol)
+                    # We need to sort by symbol, timestamp to ensure cumcount works chronologically per stock
+                    df_temp = df.reset_index().sort_values(["symbol", "timestamp"])
+                    
+                    # 计算累计交易天数 (从 0 开始)
+                    df_temp["_listed_days"] = df_temp.groupby("symbol").cumcount()
+                    
+                    # 过滤
+                    initial_count = len(df_temp)
+                    df_filtered = df_temp[df_temp["_listed_days"] >= min_listed_days].copy()
+                    
+                    if len(df_filtered) < initial_count:
+                        self.log(f"已剔除次新股样本 (上市 < {min_listed_days} 天): {initial_count} -> {len(df_filtered)}")
+                        # 恢复索引
+                        df = df_filtered.drop(columns=["_listed_days"]).set_index(["timestamp", "symbol"]).sort_index()
+                    else:
+                        self.log("没有检测到次新股样本或阈值过低")
+                        
+                except Exception as e:
+                    self.log(f"过滤次新股失败 (忽略): {e}")
 
                 # 2. 生成特征 (40%)
                 self.training_status["message"] = "生成特征..."

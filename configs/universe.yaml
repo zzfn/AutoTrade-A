@@ -4,4 +4,4 @@ symbols:
   # - "600021.SH"
   # Use "ALL" to include all A-share stocks (excluding ST)
   # - "ALL"
-  - "CSI500"
+  - "CSI800"
