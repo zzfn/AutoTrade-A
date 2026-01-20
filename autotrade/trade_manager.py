@@ -423,7 +423,7 @@ class TradeManager:
                 # Generate QuantStats report
                 try:
                     import matplotlib
-                    matplotlib.use('Agg')  # 使用非交互式后端，避免 GUI 错误
+                    matplotlib.use('Agg') # 使用非交互式后端，避免 GUI 错误
                     import quantstats as qs
                     self.log("正在使用 QuantStats 生成详细回测报告...")
                     
@@ -434,12 +434,12 @@ class TradeManager:
                     
                     # 确保索引是 DatetimeIndex
                     returns.index = pd.to_datetime(returns.index)
-                    # 处理时区（QuantStats 有时对时区敏感，通常统一为 None）
+                    # 处理时区
                     if returns.index.tz is not None:
                         returns.index = returns.index.tz_localize(None)
 
                     # 保存为 HTML
-                    qs.reports.html(returns, output=report_path, title=f"AutoTrade-A 回测报告 {timestamp}")
+                    qs.reports.html(returns, output=report_path, title=f"AutoTrade-A Backtest Report {timestamp}")
                     self.log(f"已生成 QuantStats 报告: {report_path}")
 
                     # 提取详细交易记录供前端展示 (取最近 200 条以防数据量太大)
@@ -450,6 +450,7 @@ class TradeManager:
                         for _, row in t_rec.head(200).iterrows():
                             trades_list.append({
                                 "symbol": str(row.get('Column', 'Unknown')),
+                                "size": float(row.get('Size', 0)), # 增加股数
                                 "entry_time": str(row.get('Entry Timestamp')).split('.')[0],
                                 "exit_time": str(row.get('Exit Timestamp')).split('.')[0],
                                 "pnl": float(row.get('PnL', 0)),

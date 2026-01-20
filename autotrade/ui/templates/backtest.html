@@ -12,6 +12,9 @@
       model_name: "",
       top_k: 3,
       rebalance_period: 1,
+      initial_capital: 100000.0,
+      commission: 0.0005,
+      slippage: 0.0005,
     });
     const [models, setModels] = useState([]);
     const [strategyConfig, setStrategyConfig] = useState(null);
@@ -300,6 +303,66 @@
               </p>
             </div>
             <div>
+              <label className="block text-sm font-medium text-slate-400 mb-1.5 uppercase tracking-wider font-bold">
+                高级回测设置
+              </label>
+              <div className="p-4 bg-slate-900/50 border border-slate-700/50 rounded-xl space-y-4">
+                <div>
+                  <label className="block text-xs text-slate-500 mb-1">
+                    初始资金 (元)
+                  </label>
+                  <input
+                    type="number"
+                    className="w-full bg-slate-800/50 border border-slate-700/50 rounded-lg p-2 text-slate-200 text-sm"
+                    value={params.initial_capital}
+                    onChange={(e) =>
+                      setParams({
+                        ...params,
+                        initial_capital: parseFloat(e.target.value),
+                      })
+                    }
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <label className="block text-slate-500 mb-1">
+                      手续费 (万五填0.0005)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.0001"
+                      className="w-full bg-slate-800/50 border border-slate-700/50 rounded-lg p-2 text-slate-200"
+                      value={params.commission}
+                      onChange={(e) =>
+                        setParams({
+                          ...params,
+                          commission: parseFloat(e.target.value),
+                        })
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-500 mb-1">
+                      滑点 (万五填0.0005)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.0001"
+                      className="w-full bg-slate-800/50 border border-slate-700/50 rounded-lg p-2 text-slate-200"
+                      value={params.slippage}
+                      onChange={(e) =>
+                        setParams({
+                          ...params,
+                          slippage: parseFloat(e.target.value),
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div>
               <label className="block text-sm font-medium text-slate-400 mb-1.5">
                 开始日期
               </label>
@@ -475,6 +538,7 @@
                           <thead className="bg-slate-800/50 text-slate-400 uppercase text-[10px]">
                             <tr>
                               <th className="p-3">代码</th>
+                              <th className="p-3 text-right">股数</th>
                               <th className="p-3">买入时间/价格</th>
                               <th className="p-3">卖出时间/价格</th>
                               <th className="p-3">盈亏</th>
@@ -489,6 +553,9 @@
                               >
                                 <td className="p-3 font-mono text-purple-400 font-bold">
                                   {t.symbol}
+                                </td>
+                                <td className="p-3 text-right font-mono text-slate-300">
+                                  {t.size.toLocaleString()}
                                 </td>
                                 <td className="p-3 leading-relaxed">
                                   <div className="text-slate-500">

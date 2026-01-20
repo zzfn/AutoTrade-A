@@ -112,8 +112,8 @@ class BacktestEngine:
         
         # Run Portfolio simulation
         # Use targetpercent size_type to rebalance to weights
-        # We MUST use group_by=True (or pass a group map) to simulate a SINGLE portfolio
-        # containing multiple assets. Otherwise vectorbt runs one backtest per column.
+        # size_granularity=100: 强制成交股数为 100 的整数倍 (A股一手规则)
+        # min_size=100: 最少购买 100 股
         pf = vbt.Portfolio.from_orders(
             close=close,
             size=weights,
@@ -122,7 +122,9 @@ class BacktestEngine:
             fees=self.commission,
             slippage=self.slippage,
             freq='1D' if self.signal_generator.interval == 'day' else '1h',
-            group_by=True 
+            group_by=True,
+            size_granularity=100, 
+            min_size=100
         )
         
         # When grouped, total_return() returns a scalar (or single item Series)
