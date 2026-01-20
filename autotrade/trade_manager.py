@@ -379,7 +379,7 @@ class TradeManager:
                     initial_capital=float(params.get("initial_capital", 1000000.0)),
                     commission=float(params.get("commission", 0.0005)),
                     slippage=float(params.get("slippage", 0.0005)),
-                    rebalance_period=int(params.get("rebalance_period", 5))
+                    rebalance_period=int(params.get("rebalance_period", 1))
                 )
 
                 # 4. Run Backtest
@@ -842,7 +842,7 @@ class TradeManager:
                 y_valid = target.loc[valid_mask]
 
                 trainer = LightGBMTrainer(
-                    model_name="lightgbm",
+                    model_name="lgw",
                     num_boost_round=300,
                 )
                 trainer.train(X_train, y_train, X_valid, y_valid)

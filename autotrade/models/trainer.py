@@ -192,7 +192,7 @@ class LightGBMTrainer(ModelTrainer):
     def __init__(
         self,
         model_dir: str | Path = MODELS_DIR,
-        model_name: str = "lightgbm",
+        model_name: str = "lgw",
         params: dict | None = None,
         num_boost_round: int = 500,
         early_stopping_rounds: int = 50,

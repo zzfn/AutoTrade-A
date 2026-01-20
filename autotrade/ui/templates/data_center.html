@@ -133,6 +133,23 @@
     useEffect(() => {
       fetchInventory();
 
+      // Fetch initial config from backend to populate symbols
+      const fetchConfig = async () => {
+        try {
+          const res = await fetch("/api/strategy/config");
+          const data = await res.json();
+          if (data.universe_symbols && Array.isArray(data.universe_symbols)) {
+            setConfig((prev) => ({
+              ...prev,
+              symbols: data.universe_symbols.join(", "),
+            }));
+          }
+        } catch (e) {
+          console.error("Failed to fetch config:", e);
+        }
+      };
+      fetchConfig();
+
       const connectWebSocket = () => {
         const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
         const ws = new WebSocket(`${protocol}//${window.location.host}/ws`);

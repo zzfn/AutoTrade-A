@@ -94,20 +94,26 @@ class BacktestEngine:
         # Equal weight for selected assets
         weights = long_signals.astype(float)
         
-        # 应用换仓周期：只在换仓日更新权重，其余日期权重保持不变
-        if self.rebalance_period > 1:
-            logger.info(f"Applying rebalance period: {self.rebalance_period} days")
-            # 每隔 self.rebalance_period 行保留一次信号，其余设为 NaN 随后 ffill
-            mask = np.arange(len(weights)) % self.rebalance_period == 0
-            weights[~mask] = np.nan
-            weights = weights.ffill()
-            
+        # 5. Calculate Weights
+        # Equal weight for selected assets
+        weights = long_signals.astype(float)
+        
         row_sums = weights.sum(axis=1)
         # Avoid division by zero
         weights = weights.div(row_sums.replace(0, 1), axis=0)
         
         # Cash buffer (95% invested)
         weights = weights * 0.95
+        
+        # 应用换仓周期：
+        # 如果设置了调仓周期，我们只在调仓日 (Rebalance Day) 发送目标仓位指令。
+        # 非调仓日将权重设为 NaN，VectorBT 会将其视为 "Hold" (保持股数不变)，
+        # 而不是之前的 ffill (保持市值权重不变，会导致每日微调)。
+        if self.rebalance_period > 1:
+            logger.info(f"Applying rebalance period: {self.rebalance_period} days (Strict Hold)")
+            mask = np.arange(len(weights)) % self.rebalance_period == 0
+            weights.iloc[~mask] = np.nan
+
         
         # 6. Execute with vectorbt
         logger.info("Simulating trades with vectorbt...")

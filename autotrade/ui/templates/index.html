@@ -30,6 +30,37 @@
       fetchPredictions();
     }, []);
 
+    // 过滤逻辑
+    const { useMemo } = React;
+    const [filterBoard, setFilterBoard] = useState("ALL");
+
+    const filteredPredictions = useMemo(() => {
+      if (!predictions?.predictions) return [];
+      if (filterBoard === "ALL") return predictions.predictions;
+
+      return predictions.predictions.filter((p) => {
+        const symbol = p.symbol;
+        if (filterBoard === "STAR") return symbol.startsWith("688");
+        if (filterBoard === "GEM") {
+          return symbol.startsWith("300") || symbol.startsWith("301");
+        }
+        if (filterBoard === "MAIN") {
+          return (
+            !symbol.startsWith("688") &&
+            !symbol.startsWith("300") &&
+            !symbol.startsWith("301") &&
+            !symbol.startsWith("4") &&
+            !symbol.startsWith("8")
+          );
+        }
+        return true;
+      });
+    }, [predictions, filterBoard]);
+
+    const topKCount = data?.strategy_config?.ml_config?.top_k || 5;
+    const topPicks = filteredPredictions.slice(0, topKCount);
+    const otherPicks = filteredPredictions.slice(topKCount);
+
     if (!data)
       return (
         <div className="flex items-center justify-center h-64">
@@ -52,7 +83,7 @@
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 fade-in">
         {/* Prediction Signals - 新增 */}
         <Card title="📊 最新预测信号" className="col-span-1 md:col-span-3">
-          <div className="mb-4 flex justify-between items-center">
+          <div className="mb-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
             <div className="text-sm text-slate-400">
               {predictions?.date && (
                 <span>
@@ -71,13 +102,36 @@
                 </span>
               )}
             </div>
-            <button
-              onClick={() => fetchPredictions(true)}
-              disabled={loadingPredictions}
-              className="px-3 py-1.5 bg-cyan-500/20 text-cyan-400 rounded-lg text-xs font-medium hover:bg-cyan-500/30 transition-colors disabled:opacity-50"
-            >
-              {loadingPredictions ? "加载中..." : "刷新预测"}
-            </button>
+            <div className="flex items-center gap-2">
+              <div className="flex bg-slate-900/50 p-1 rounded-lg border border-slate-700/50">
+                {["ALL", "MAIN", "GEM", "STAR"].map((type) => (
+                  <button
+                    key={type}
+                    onClick={() => setFilterBoard(type)}
+                    className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${
+                      filterBoard === type
+                        ? "bg-cyan-500 text-slate-900 shadow-lg shadow-cyan-500/20"
+                        : "text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+                    }`}
+                  >
+                    {type === "ALL"
+                      ? "全部"
+                      : type === "MAIN"
+                        ? "主板"
+                        : type === "GEM"
+                          ? "创业"
+                          : "科创"}
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={() => fetchPredictions(true)}
+                disabled={loadingPredictions}
+                className="px-3 py-1.5 bg-cyan-500/20 text-cyan-400 rounded-lg text-xs font-medium hover:bg-cyan-500/30 transition-colors disabled:opacity-50"
+              >
+                {loadingPredictions ? "加载中..." : "刷新"}
+              </button>
+            </div>
           </div>
 
           {predictions?.status === "error" ? (
@@ -87,7 +141,7 @@
                 请先在「模型管理」页面训练模型
               </div>
             </div>
-          ) : predictions?.predictions?.length > 0 ? (
+          ) : filteredPredictions.length > 0 ? (
             <div className="space-y-6">
               {/* Top Recommendations Section */}
               <div className="bg-gradient-to-r from-emerald-500/10 to-transparent p-5 rounded-2xl border border-emerald-500/20 relative overflow-hidden">
@@ -99,87 +153,92 @@
                     🔥
                   </span>
                   <h3 className="text-emerald-300 font-bold uppercase tracking-wider text-sm">
-                    每日精选 TOP {data?.strategy_config?.ml_config?.top_k || 5}
+                    {filterBoard === "ALL"
+                      ? "每日精选"
+                      : filterBoard === "MAIN"
+                        ? "主板精选"
+                        : filterBoard === "GEM"
+                          ? "创业板精选"
+                          : "科创板精选"}{" "}
+                    TOP {Math.min(topKCount, topPicks.length)}
                   </h3>
                 </div>
 
-                <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 relative z-10">
-                  {predictions.predictions
-                    .slice(0, data?.strategy_config?.ml_config?.top_k || 5)
-                    .map((pred, i) => (
-                      <div
-                        key={i}
-                        className="p-4 rounded-xl border bg-slate-900/60 border-emerald-500/40 shadow-lg shadow-emerald-500/5 hover:scale-105 transition-transform duration-300 relative group"
-                      >
-                        <div className="absolute -top-3 -right-3 w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center text-slate-900 font-bold text-sm shadow-md z-20">
-                          {i + 1}
+                <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 relative z-10">
+                  {topPicks.map((pred, i) => (
+                    <div
+                      key={i}
+                      className="p-4 rounded-xl border bg-slate-900/60 border-emerald-500/40 shadow-lg shadow-emerald-500/5 hover:scale-105 transition-transform duration-300 relative group"
+                    >
+                      <div className="absolute -top-3 -right-3 w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center text-slate-900 font-bold text-sm shadow-md z-20">
+                        {i + 1}
+                      </div>
+                      <div className="flex justify-between items-start mb-2">
+                        <div className="font-bold text-slate-100 truncate pr-2 text-lg">
+                          {pred.name}
                         </div>
-                        <div className="flex justify-between items-start mb-2">
-                          <div className="font-bold text-slate-100 truncate pr-2 text-lg">
-                            {pred.name}
-                          </div>
-                          <div className="flex items-center gap-1">
-                            {(() => {
-                              const board = getBoardInfo(pred.symbol);
-                              return board ? (
-                                <span
-                                  className={`text-[9px] px-1 py-0.5 rounded border ${board.color}`}
-                                >
-                                  {board.name}
-                                </span>
-                              ) : null;
-                            })()}
-                            <div className="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">
-                              {pred.symbol}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs text-slate-500">
-                              当前价
-                            </span>
-                            <div className="text-right">
-                              <div className="font-mono text-slate-200 font-bold">
-                                ¥{pred.price ? pred.price.toFixed(2) : "-"}
-                              </div>
-                              <div className="text-[10px] text-slate-500">
-                                {pred.date.split(" ")[0]}
-                              </div>
-                            </div>
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs text-slate-500">
-                              5日预测收益
-                            </span>
-                            <span
-                              className={`font-mono font-bold ${pred.score > 0 ? "text-emerald-400" : "text-rose-400"}`}
-                            >
-                              {pred.score > 0 ? "+" : ""}
-                              {(pred.score * 100).toFixed(2)}%
-                            </span>
-                          </div>
-
-                          <div className="mt-2 text-[10px] text-slate-500">
-                            <div className="flex justify-between mb-1">
-                              <span>信号强度</span>
-                              <span className="text-slate-300">
-                                {Math.min(pred.confidence, 10).toFixed(1)} / 10
+                        <div className="flex items-center gap-1">
+                          {(() => {
+                            const board = getBoardInfo(pred.symbol);
+                            return board ? (
+                              <span
+                                className={`text-[9px] px-1 py-0.5 rounded border ${board.color}`}
+                              >
+                                {board.name}
                               </span>
-                            </div>
-                            <div className="h-1 bg-slate-800 rounded-full overflow-hidden">
-                              <div
-                                className={`h-full transition-all duration-1000 ${pred.score > 0 ? "bg-emerald-500" : "bg-rose-500"}`}
-                                style={{
-                                  width: `${Math.min(pred.confidence * 10, 100)}%`,
-                                }}
-                              ></div>
-                            </div>
+                            ) : null;
+                          })()}
+                          <div className="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">
+                            {pred.symbol}
                           </div>
                         </div>
                       </div>
-                    ))}
+
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-slate-500">
+                            当前价
+                          </span>
+                          <div className="text-right">
+                            <div className="font-mono text-slate-200 font-bold">
+                              ¥{pred.price ? pred.price.toFixed(2) : "-"}
+                            </div>
+                            <div className="text-[10px] text-slate-500">
+                              {pred.date.split(" ")[0]}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-slate-500">
+                            5日预测收益
+                          </span>
+                          <span
+                            className={`font-mono font-bold ${pred.score > 0 ? "text-emerald-400" : "text-rose-400"}`}
+                          >
+                            {pred.score > 0 ? "+" : ""}
+                            {(pred.score * 100).toFixed(2)}%
+                          </span>
+                        </div>
+
+                        <div className="mt-2 text-[10px] text-slate-500">
+                          <div className="flex justify-between mb-1">
+                            <span>信号强度</span>
+                            <span className="text-slate-300">
+                              {Math.min(pred.confidence, 10).toFixed(1)} / 10
+                            </span>
+                          </div>
+                          <div className="h-1 bg-slate-800 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full transition-all duration-1000 ${pred.score > 0 ? "bg-emerald-500" : "bg-rose-500"}`}
+                              style={{
+                                width: `${Math.min(pred.confidence * 10, 100)}%`,
+                              }}
+                            ></div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
 
@@ -187,90 +246,95 @@
               <div>
                 <div className="flex items-center justify-between mb-3 px-1">
                   <h3 className="text-slate-400 text-xs font-bold uppercase tracking-widest">
-                    全市场扫描 ({predictions.predictions.length})
+                    {filterBoard === "ALL"
+                      ? "全市场"
+                      : filterBoard === "MAIN"
+                        ? "主板"
+                        : filterBoard === "GEM"
+                          ? "创业板"
+                          : "科创板"}
+                    扫描 ({filteredPredictions.length})
                   </h3>
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
-                  {predictions.predictions
-                    .slice(data?.strategy_config?.ml_config?.top_k || 5)
-                    .map((pred, i) => (
-                      <div
-                        key={i}
-                        className={`p-3 rounded-lg border flex flex-col justify-between ${
-                          pred.signal === "BUY"
-                            ? "bg-emerald-500/5 border-emerald-500/20 hover:border-emerald-500/40"
-                            : pred.signal === "SELL"
-                              ? "bg-rose-500/5 border-rose-500/20 hover:border-rose-500/40"
-                              : "bg-slate-800/30 border-slate-700/30 hover:border-slate-600/50"
-                        } transition-colors`}
-                      >
-                        <div>
-                          <div className="flex justify-between items-center mb-1">
-                            <div
-                              className="font-medium text-slate-200 truncate text-sm"
-                              title={pred.name}
-                            >
-                              {pred.name}
-                            </div>
-                            <div
-                              className={`text-[10px] font-bold px-1.5 rounded ${
-                                pred.signal === "BUY"
-                                  ? "bg-emerald-500/20 text-emerald-400"
-                                  : pred.signal === "SELL"
-                                    ? "bg-rose-500/20 text-rose-400"
-                                    : "bg-slate-700 text-slate-400"
-                              }`}
-                            >
-                              {pred.signal === "BUY"
-                                ? "买"
+                  {otherPicks.map((pred, i) => (
+                    <div
+                      key={i}
+                      className={`p-3 rounded-lg border flex flex-col justify-between ${
+                        pred.signal === "BUY"
+                          ? "bg-emerald-500/5 border-emerald-500/20 hover:border-emerald-500/40"
+                          : pred.signal === "SELL"
+                            ? "bg-rose-500/5 border-rose-500/20 hover:border-rose-500/40"
+                            : "bg-slate-800/30 border-slate-700/30 hover:border-slate-600/50"
+                      } transition-colors`}
+                    >
+                      <div>
+                        <div className="flex justify-between items-center mb-1">
+                          <div
+                            className="font-medium text-slate-200 truncate text-sm"
+                            title={pred.name}
+                          >
+                            {pred.name}
+                          </div>
+                          <div
+                            className={`text-[10px] font-bold px-1.5 rounded ${
+                              pred.signal === "BUY"
+                                ? "bg-emerald-500/20 text-emerald-400"
                                 : pred.signal === "SELL"
-                                  ? "卖"
-                                  : "-"}
-                            </div>
-                          </div>
-                          <div className="flex justify-between items-center mb-2">
-                            <div className="flex items-center gap-1">
-                              <span className="text-[10px] text-slate-500 font-mono">
-                                {pred.symbol}
-                              </span>
-                              {(() => {
-                                const board = getBoardInfo(pred.symbol);
-                                return board ? (
-                                  <span
-                                    className={`text-[8px] px-1 rounded border ${board.color} scale-90 origin-left`}
-                                  >
-                                    {board.name}
-                                  </span>
-                                ) : null;
-                              })()}
-                            </div>
-                            <span
-                              className="text-[10px] text-slate-400 font-mono"
-                              title={`数据日期: ${pred.date}`}
-                            >
-                              ¥{pred.price ? pred.price.toFixed(2) : "-"}
-                            </span>
-                          </div>
-                        </div>
-                        <div className="flex justify-between items-end border-t border-slate-700/30 pt-1.5 mt-1">
-                          <span className="text-[10px] text-slate-500">
-                            预期
-                          </span>
-                          <span
-                            className={`text-xs font-mono font-bold ${
-                              pred.score > 0
-                                ? "text-emerald-400"
-                                : pred.score < 0
-                                  ? "text-rose-400"
-                                  : "text-slate-400"
+                                  ? "bg-rose-500/20 text-rose-400"
+                                  : "bg-slate-700 text-slate-400"
                             }`}
                           >
-                            {pred.score > 0 ? "+" : ""}
-                            {(pred.score * 100).toFixed(2)}%
+                            {pred.signal === "BUY"
+                              ? "买"
+                              : pred.signal === "SELL"
+                                ? "卖"
+                                : "-"}
+                          </div>
+                        </div>
+                        <div className="flex justify-between items-center mb-2">
+                          <div className="flex items-center gap-1">
+                            <span className="text-[10px] text-slate-500 font-mono">
+                              {pred.symbol}
+                            </span>
+                            {(() => {
+                              const board = getBoardInfo(pred.symbol);
+                              return board ? (
+                                <span
+                                  className={`text-[8px] px-1 rounded border ${board.color} scale-90 origin-left`}
+                                >
+                                  {board.name}
+                                </span>
+                              ) : null;
+                            })()}
+                          </div>
+                          <span
+                            className="text-[10px] text-slate-400 font-mono"
+                            title={`数据日期: ${pred.date}`}
+                          >
+                            ¥{pred.price ? pred.price.toFixed(2) : "-"}
                           </span>
                         </div>
                       </div>
-                    ))}
+                      <div className="flex justify-between items-end border-t border-slate-700/30 pt-1.5 mt-1">
+                        <span className="text-[10px] text-slate-500">
+                          预期
+                        </span>
+                        <span
+                          className={`text-xs font-mono font-bold ${
+                            pred.score > 0
+                              ? "text-emerald-400"
+                              : pred.score < 0
+                                ? "text-rose-400"
+                                : "text-slate-400"
+                          }`}
+                        >
+                          {pred.score > 0 ? "+" : ""}
+                          {(pred.score * 100).toFixed(2)}%
+                        </span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
