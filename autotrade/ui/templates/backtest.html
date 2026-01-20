@@ -2,6 +2,7 @@
 <div id="backtest-root"></div>
 {% endblock %} {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom"></script>
 <script type="text/babel">
   const Backtest = () => {
     const [params, setParams] = useState({
@@ -53,6 +54,145 @@
         setLoading(false);
       }
     };
+
+    // Chart logic
+    const lastRenderedTs = useRef(null);
+
+    useEffect(() => {
+      const backtest = data?.last_backtest;
+      const chartData = backtest?.chart_data;
+      if (!chartData || !backtest?.timestamp) return;
+
+      // 如果时间戳没变，说明是同一次回测结果，跳过重绘
+      if (lastRenderedTs.current === backtest.timestamp) return;
+      lastRenderedTs.current = backtest.timestamp;
+
+      const ctx = document.getElementById("backtestChart");
+      if (!ctx) return;
+
+      // Cleanup existing chart
+      const existingChart = Chart.getChart(ctx);
+      if (existingChart) existingChart.destroy();
+
+      // Process markers to align with labels
+      const buyPoints = new Array(chartData.labels.length).fill(null);
+      const sellPoints = new Array(chartData.labels.length).fill(null);
+      const markerInfo = new Array(chartData.labels.length).fill("");
+
+      chartData.markers?.forEach((m) => {
+        const idx = chartData.labels.indexOf(m.date);
+        if (idx !== -1) {
+          if (m.type === "buy") {
+            buyPoints[idx] = chartData.values[idx] * 100;
+          } else {
+            sellPoints[idx] = chartData.values[idx] * 100;
+          }
+          markerInfo[idx] += (markerInfo[idx] ? ", " : "") + m.symbol;
+        }
+      });
+
+      const chart = new Chart(ctx, {
+        type: "line",
+        data: {
+          labels: chartData.labels,
+          datasets: [
+            {
+              label: "累计收益率 (%)",
+              data: chartData.values.map((v) => v * 100),
+              borderColor: "#22d3ee",
+              backgroundColor: "rgba(34, 211, 238, 0.1)",
+              borderWidth: 2,
+              fill: true,
+              tension: 0.1,
+              pointRadius: 0,
+              order: 2,
+            },
+            {
+              label: "买入",
+              data: buyPoints,
+              borderColor: "#10b981",
+              backgroundColor: "#10b981",
+              pointStyle: "circle",
+              pointRadius: 4,
+              showLine: false,
+              order: 1,
+            },
+            {
+              label: "卖出",
+              data: sellPoints,
+              borderColor: "#f43f5e",
+              backgroundColor: "#f43f5e",
+              pointStyle: "circle",
+              pointRadius: 4,
+              showLine: false,
+              order: 1,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          onClick: (e) => {
+            // 双击重置
+            if (e.native.detail === 2) {
+              chart.resetZoom();
+            }
+          },
+          plugins: {
+            legend: {
+              display: true,
+              labels: { color: "#94a3b8", boxWidth: 10, font: { size: 10 } },
+            },
+            zoom: {
+              zoom: {
+                wheel: { enabled: true },
+                pinch: { enabled: true },
+                mode: "x",
+              },
+              pan: {
+                enabled: true,
+                mode: "x",
+              },
+            },
+            tooltip: {
+              mode: "index",
+              intersect: false,
+              callbacks: {
+                label: function (context) {
+                  let label = context.dataset.label || "";
+                  if (label && context.parsed.y !== null) {
+                    label += ": " + context.parsed.y.toFixed(2) + "%";
+                  }
+                  if (
+                    (context.datasetIndex === 1 ||
+                      context.datasetIndex === 2) &&
+                    markerInfo[context.dataIndex]
+                  ) {
+                    label += " (" + markerInfo[context.dataIndex] + ")";
+                  }
+                  return label;
+                },
+              },
+            },
+          },
+          scales: {
+            x: {
+              display: true,
+              grid: { display: false },
+              ticks: { color: "#64748b", maxTicksLimit: 10 },
+            },
+            y: {
+              display: true,
+              grid: { color: "rgba(30, 41, 59, 0.5)" },
+              ticks: {
+                color: "#64748b",
+                callback: (value) => value.toFixed(1) + "%",
+              },
+            },
+          },
+        },
+      });
+    }, [data?.last_backtest?.chart_data]);
 
     return (
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 fade-in">
@@ -238,7 +378,7 @@
                         target="_blank"
                         className="px-3 py-1.5 bg-cyan-500 text-slate-900 rounded-lg text-xs font-bold hover:bg-cyan-400 transition-colors"
                       >
-                        查看完整报告 ↗
+                        查看完整报告 (QuantStats) ↗
                       </a>
                     )}
                   </div>
@@ -247,20 +387,12 @@
                 {/* Key Metrics Cards */}
                 {data.last_backtest.stats && (
                   <div className="grid grid-cols-5 gap-3">
-                    {/* Total Return */}
+                    {/* ... 之前的指标卡片保持不变 ... */}
                     <div
-                      className={`p-4 rounded-xl text-center ${
-                        parseFloat(data.last_backtest.stats.total_return) >= 0
-                          ? "bg-gradient-to-br from-emerald-500/20 to-emerald-600/10 border border-emerald-500/30"
-                          : "bg-gradient-to-br from-rose-500/20 to-rose-600/10 border border-rose-500/30"
-                      }`}
+                      className={`p-4 rounded-xl text-center ${parseFloat(data.last_backtest.stats.total_return) >= 0 ? "bg-emerald-500/20" : "bg-rose-500/20"}`}
                     >
                       <div
-                        className={`text-2xl font-bold ${
-                          parseFloat(data.last_backtest.stats.total_return) >= 0
-                            ? "text-emerald-400"
-                            : "text-rose-400"
-                        }`}
+                        className={`text-2xl font-bold ${parseFloat(data.last_backtest.stats.total_return) >= 0 ? "text-emerald-400" : "text-rose-400"}`}
                       >
                         {(
                           parseFloat(data.last_backtest.stats.total_return) *
@@ -272,9 +404,7 @@
                         总收益率
                       </div>
                     </div>
-
-                    {/* Sharpe */}
-                    <div className="p-4 rounded-xl text-center bg-gradient-to-br from-blue-500/20 to-blue-600/10 border border-blue-500/30">
+                    <div className="p-4 rounded-xl text-center bg-blue-500/20 border border-blue-500/30">
                       <div className="text-2xl font-bold text-blue-400">
                         {parseFloat(
                           data.last_backtest.stats.sharpe_ratio,
@@ -284,9 +414,7 @@
                         夏普比率
                       </div>
                     </div>
-
-                    {/* Max Drawdown */}
-                    <div className="p-4 rounded-xl text-center bg-gradient-to-br from-rose-500/20 to-rose-600/10 border border-rose-500/30">
+                    <div className="p-4 rounded-xl text-center bg-rose-500/20 border border-rose-500/30">
                       <div className="text-2xl font-bold text-rose-400">
                         {(
                           parseFloat(data.last_backtest.stats.max_drawdown) *
@@ -298,9 +426,7 @@
                         最大回撤
                       </div>
                     </div>
-
-                    {/* Total Trades */}
-                    <div className="p-4 rounded-xl text-center bg-gradient-to-br from-purple-500/20 to-purple-600/10 border border-purple-500/30">
+                    <div className="p-4 rounded-xl text-center bg-purple-500/20 border border-purple-500/30">
                       <div className="text-2xl font-bold text-purple-400">
                         {data.last_backtest.stats.total_trades}
                       </div>
@@ -308,22 +434,8 @@
                         交易次数
                       </div>
                     </div>
-
-                    {/* Win Rate */}
-                    <div
-                      className={`p-4 rounded-xl text-center ${
-                        parseFloat(data.last_backtest.stats.win_rate) >= 0.5
-                          ? "bg-gradient-to-br from-emerald-500/20 to-emerald-600/10 border border-emerald-500/30"
-                          : "bg-gradient-to-br from-amber-500/20 to-amber-600/10 border border-amber-500/30"
-                      }`}
-                    >
-                      <div
-                        className={`text-2xl font-bold ${
-                          parseFloat(data.last_backtest.stats.win_rate) >= 0.5
-                            ? "text-emerald-400"
-                            : "text-amber-400"
-                        }`}
-                      >
+                    <div className="p-4 rounded-xl text-center bg-emerald-500/20 border border-emerald-500/30">
+                      <div className="text-2xl font-bold text-emerald-400">
                         {(
                           parseFloat(data.last_backtest.stats.win_rate) * 100
                         ).toFixed(1)}
@@ -335,6 +447,85 @@
                     </div>
                   </div>
                 )}
+
+                {/* Chart Area */}
+                {data.last_backtest.chart_data && (
+                  <div className="p-4 bg-slate-950/40 rounded-xl border border-slate-800/50">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                        📈 资产净值曲线 (Equity Curve)
+                      </h3>
+                      <div className="text-[10px] text-slate-500">单位: %</div>
+                    </div>
+                    <div className="h-[250px] w-full">
+                      <canvas id="backtestChart"></canvas>
+                    </div>
+                  </div>
+                )}
+
+                {/* Trade History Table */}
+                {data.last_backtest.trades &&
+                  data.last_backtest.trades.length > 0 && (
+                    <div className="mt-6">
+                      <h3 className="text-sm font-bold text-slate-300 mb-3 flex items-center gap-2">
+                        📋 交易日志 (最近 {data.last_backtest.trades.length} 笔)
+                      </h3>
+                      <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900/40">
+                        <table className="w-full text-xs text-left">
+                          <thead className="bg-slate-800/50 text-slate-400 uppercase text-[10px]">
+                            <tr>
+                              <th className="p-3">代码</th>
+                              <th className="p-3">买入时间/价格</th>
+                              <th className="p-3">卖出时间/价格</th>
+                              <th className="p-3">盈亏</th>
+                              <th className="p-3">收益率</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-800">
+                            {data.last_backtest.trades.map((t, i) => (
+                              <tr
+                                key={i}
+                                className="hover:bg-slate-800/30 transition-colors"
+                              >
+                                <td className="p-3 font-mono text-purple-400 font-bold">
+                                  {t.symbol}
+                                </td>
+                                <td className="p-3 leading-relaxed">
+                                  <div className="text-slate-500">
+                                    {t.entry_time}
+                                  </div>
+                                  <div className="text-slate-300">
+                                    ¥{t.entry_price.toFixed(2)}
+                                  </div>
+                                </td>
+                                <td className="p-3 leading-relaxed">
+                                  <div className="text-slate-500">
+                                    {t.exit_time}
+                                  </div>
+                                  <div className="text-slate-300">
+                                    ¥{t.exit_price.toFixed(2)}
+                                  </div>
+                                </td>
+                                <td
+                                  className={`p-3 font-bold ${t.pnl >= 0 ? "text-emerald-400" : "text-rose-400"}`}
+                                >
+                                  {t.pnl >= 0 ? "+" : ""}
+                                  {t.pnl.toFixed(2)}
+                                </td>
+                                <td className={`p-3`}>
+                                  <span
+                                    className={`px-2 py-0.5 rounded ${t.return >= 0 ? "bg-emerald-500/10 text-emerald-400" : "bg-rose-500/10 text-rose-400"}`}
+                                  >
+                                    {(t.return * 100).toFixed(2)}%
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
               </div>
             )}
 

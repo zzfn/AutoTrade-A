@@ -414,136 +414,86 @@ class TradeManager:
 
                 # Save report
                 base_dir = os.path.dirname(os.path.abspath(__file__))
-                logs_dir = os.path.join(os.path.dirname(base_dir), "logs")
+                logs_dir = os.path.normpath(os.path.join(base_dir, "..", "logs"))
                 os.makedirs(logs_dir, exist_ok=True)
 
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 report_path = os.path.join(logs_dir, f"backtest_{timestamp}.html")
 
-                # Generate VectorBT report with plots
+                # Generate QuantStats report
                 try:
-                    # 使用 Vectorbt 原生绘图 (pf.plot())
-                    # 这将生成包含净值曲线、回撤、以及潜在买卖点标记的完整交互式图表
-                    self.log("生成 VectorBT 原生图表...")
-                    fig = pf.plot()
+                    import matplotlib
+                    matplotlib.use('Agg')  # 使用非交互式后端，避免 GUI 错误
+                    import quantstats as qs
+                    self.log("正在使用 QuantStats 生成详细回测报告...")
                     
-                    fig.update_layout(
-                        title=dict(
-                            text=f"📊 VectorBT Backtest Report - {timestamp}",
-                            font=dict(size=20)
-                        ),
-                        template="plotly_white",
-                        height=800
-                    )
-
-                    # Save to HTML
-                    fig.write_html(report_path)
-
-                    # 获取完整的 vectorbt stats
-                    full_stats = stats.get('stats', {})
+                    # 获取收益率序列 (vectorbt pf.returns())
+                    returns = pf.returns()
+                    if isinstance(returns, pd.DataFrame):
+                        returns = returns.iloc[:, 0]
                     
-                    # 构建详细统计 HTML
-                    detailed_rows = ""
-                    if full_stats:
-                        for key, value in full_stats.items():
-                            if value is not None:
-                                try:
-                                    if isinstance(value, float):
-                                        formatted_val = f"{value:.4f}"
-                                    else:
-                                        formatted_val = str(value)
-                                    detailed_rows += f'<tr><td style="padding: 8px; border-bottom: 1px solid #eee;">{key}</td><td style="padding: 8px; border-bottom: 1px solid #eee;">{formatted_val}</td></tr>'
-                                except:
-                                    pass
+                    # 确保索引是 DatetimeIndex
+                    returns.index = pd.to_datetime(returns.index)
+                    # 处理时区（QuantStats 有时对时区敏感，通常统一为 None）
+                    if returns.index.tz is not None:
+                        returns.index = returns.index.tz_localize(None)
 
-                    # Append stats to the HTML file
-                    with open(report_path, "r+") as f:
-                        content = f.read()
-                        # Insert stats before closing body
-                        stats_html = f"""
-                        <style>
-                            .stats-container {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 20px; }}
-                            .stats-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 30px; }}
-                            .stat-card {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 10px; text-align: center; }}
-                            .stat-card.green {{ background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); }}
-                            .stat-card.red {{ background: linear-gradient(135deg, #eb3349 0%, #f45c43 100%); }}
-                            .stat-card.blue {{ background: linear-gradient(135deg, #2193b0 0%, #6dd5ed 100%); }}
-                            .stat-card .value {{ font-size: 28px; font-weight: bold; }}
-                            .stat-card .label {{ font-size: 12px; opacity: 0.9; margin-top: 5px; }}
-                            .details-table {{ width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
-                            .details-table th {{ background: #2c3e50; color: white; padding: 12px; text-align: left; }}
-                            .details-table tr:hover {{ background: #f5f5f5; }}
-                            .section-title {{ color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; margin-top: 30px; }}
-                        </style>
-                        <div class="stats-container">
-                            <h2 class="section-title">📈 核心指标 Key Metrics</h2>
-                            <div class="stats-grid">
-                                <div class="stat-card {'green' if stats['total_return'] >= 0 else 'red'}">
-                                    <div class="value">{stats['total_return']:.2%}</div>
-                                    <div class="label">总收益率 Total Return</div>
-                                </div>
-                                <div class="stat-card blue">
-                                    <div class="value">{stats['sharpe_ratio']:.2f}</div>
-                                    <div class="label">夏普比率 Sharpe Ratio</div>
-                                </div>
-                                <div class="stat-card red">
-                                    <div class="value">{stats['max_drawdown']:.2%}</div>
-                                    <div class="label">最大回撤 Max Drawdown</div>
-                                </div>
-                                <div class="stat-card">
-                                    <div class="value">{stats['total_trades']}</div>
-                                    <div class="label">交易次数 Total Trades</div>
-                                </div>
-                                <div class="stat-card {'green' if stats['win_rate'] >= 0.5 else 'red'}">
-                                    <div class="value">{stats['win_rate']:.2%}</div>
-                                    <div class="label">胜率 Win Rate</div>
-                                </div>
-                            </div>
-                            
-                            <h2 class="section-title">⚙️ 回测配置 Backtest Config</h2>
-                            <table class="details-table" style="width: 50%; margin-bottom: 20px;">
-                                <tr><th>参数</th><th>值</th></tr>
-                                <tr><td style="padding: 8px;">模型 Model</td><td style="padding: 8px;">{sig_gen.model_name}</td></tr>
-                                <tr><td style="padding: 8px;">Top K</td><td style="padding: 8px;">{sig_gen.top_k}</td></tr>
-                                <tr><td style="padding: 8px;">股票数量 Symbols</td><td style="padding: 8px;">{len(symbols)}</td></tr>
-                            </table>
-                            
-                            <h2 class="section-title">📋 完整统计 Full Statistics (vectorbt)</h2>
-                            <table class="details-table">
-                                <tr><th>指标 Metric</th><th>值 Value</th></tr>
-                                {detailed_rows}
-                            </table>
-                        </div>
-                        """
-                        content = content.replace("</body>", stats_html + "</body>")
-                        f.seek(0)
-                        f.write(content)
-                        f.truncate()
+                    # 保存为 HTML
+                    qs.reports.html(returns, output=report_path, title=f"AutoTrade-A 回测报告 {timestamp}")
+                    self.log(f"已生成 QuantStats 报告: {report_path}")
 
+                    # 提取详细交易记录供前端展示 (取最近 200 条以防数据量太大)
+                    try:
+                        t_rec = pf.trades.records_readable
+                        trades_list = []
+                        # 转换成 JSON 友好的列表
+                        for _, row in t_rec.head(200).iterrows():
+                            trades_list.append({
+                                "symbol": str(row.get('Column', 'Unknown')),
+                                "entry_time": str(row.get('Entry Timestamp')).split('.')[0],
+                                "exit_time": str(row.get('Exit Timestamp')).split('.')[0],
+                                "pnl": float(row.get('PnL', 0)),
+                                "return": float(row.get('Return', 0)),
+                                "entry_price": float(row.get('Avg Entry Price', 0)),
+                                "exit_price": float(row.get('Avg Exit Price', 0)),
+                            })
+                    except Exception as te:
+                        self.log(f"提取详细交易记录失败: {te}")
+                        trades_list = []
+
+                    self.state["last_backtest"] = {
+                        "tearsheet": f"/reports/backtest_{timestamp}.html",
+                        "timestamp": datetime.now().isoformat(),
+                        "stats": {k: float(v) if isinstance(v, (int, float, np.number)) else str(v) for k,v in stats.items() if k != 'stats'},
+                        "trades": trades_list,
+                        "chart_data": {
+                            "labels": [str(d).split(' ')[0] for d in pf.returns().index],
+                            "values": [float(v) for v in (pf.value() / pf.init_cash - 1).tolist()],
+                            "markers": [
+                                {
+                                    "date": t["entry_time"].split(' ')[0],
+                                    "type": "buy",
+                                    "symbol": t["symbol"]
+                                } for t in trades_list
+                            ] + [
+                                {
+                                    "date": t["exit_time"].split(' ')[0],
+                                    "type": "sell",
+                                    "symbol": t["symbol"]
+                                } for t in trades_list
+                            ]
+                        }
+                    }
                 except Exception as e:
-                    # Fallback to simple HTML if plotting fails
-                    self.log(f"生成图表失败，使用简化报告: {e}")
-                    with open(report_path, "w") as f:
-                        f.write(f"<html><head><style>body{{font-family:Arial;}} table{{border-collapse:collapse;width:50%;}} th,td{{padding:10px;text-align:left;border-bottom:1px solid #ddd;}} th{{background:#ddd;}}</style></head><body>")
-                        f.write(f"<h1>Backtest Report</h1>")
-                        f.write(f"<p><strong>Date:</strong> {timestamp}</p>")
-                        f.write(f"<p><strong>Model:</strong> {sig_gen.model_name}</p>")
-                        f.write(f"<h2>Performance Statistics</h2>")
-                        f.write(f"<table><tr><th>Metric</th><th>Value</th></tr>")
-                        f.write(f"<tr><td>Total Return</td><td>{stats['total_return']:.2%}</td></tr>")
-                        f.write(f"<tr><td>Sharpe Ratio</td><td>{stats['sharpe_ratio']:.2f}</td></tr>")
-                        f.write(f"<tr><td>Max Drawdown</td><td>{stats['max_drawdown']:.2%}</td></tr>")
-                        f.write(f"<tr><td>Total Trades</td><td>{stats['total_trades']}</td></tr>")
-                        f.write(f"<tr><td>Win Rate</td><td>{stats['win_rate']:.2%}</td></tr>")
-                        f.write(f"</table></body></html>")
+                    self.log(f"生成 QuantStats 报告失败: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    self.state["last_backtest"] = {
+                        "timestamp": datetime.now().isoformat(),
+                        "stats": {k: float(v) if isinstance(v, (int, float, np.number)) else str(v) for k,v in stats.items() if k != 'stats'}
+                    }
                 
-                self.state["last_backtest"] = {
-                    "tearsheet": f"/reports/backtest_{timestamp}.html", # Path mapped to /reports endpoint
-                    "timestamp": datetime.now().isoformat(),
-                    "stats": {k: float(v) if isinstance(v, (int, float, np.number)) else str(v) for k,v in stats.items() if k != 'stats'}
-                }
-                
-                self.log("📊 回测结果已更新到前端页面，可在「回测状态」区域查看详情")
+                self.log("📊 回测完成，详细统计数据和交易明细已更新")
 
             except Exception as e:
                 import traceback

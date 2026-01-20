@@ -27,6 +27,7 @@ dependencies = [
     "pyyaml>=6.0.3",
     # A股数据源
     "akshare>=1.12.0",           # A股历史行情数据
+    "quantstats>=0.0.81",
 ]
 
 [dependency-groups]
