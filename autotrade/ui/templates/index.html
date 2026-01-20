@@ -2,6 +2,7 @@
 <div id="dashboard-root"></div>
 {% endblock %} {% block scripts %}
 <script type="text/babel">
+  {% raw %}
   const Dashboard = () => {
     const { data, status: connectionStatus } = useWebSocket(
       `ws://${window.location.host}/ws`,
@@ -144,28 +145,38 @@
                                 ¥{pred.price ? pred.price.toFixed(2) : "-"}
                               </div>
                               <div className="text-[10px] text-slate-500">
-                                {pred.date}
+                                {pred.date.split(" ")[0]}
                               </div>
                             </div>
                           </div>
                           <div className="flex items-center justify-between">
-                            <span className="text-xs text-slate-500">信号</span>
-                            <span className="text-sm font-bold text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded flex items-center gap-1">
-                              📈 强力买入
+                            <span className="text-xs text-slate-500">
+                              5日预测收益
+                            </span>
+                            <span
+                              className={`font-mono font-bold ${pred.score > 0 ? "text-emerald-400" : "text-rose-400"}`}
+                            >
+                              {pred.score > 0 ? "+" : ""}
+                              {(pred.score * 100).toFixed(2)}%
                             </span>
                           </div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs text-slate-500">得分</span>
-                            <span className="font-mono text-emerald-300">
-                              {pred.score.toFixed(4)}
-                            </span>
+
+                          <div className="mt-2 text-[10px] text-slate-500">
+                            <div className="flex justify-between mb-1">
+                              <span>信号强度</span>
+                              <span className="text-slate-300">
+                                {Math.min(pred.confidence, 10).toFixed(1)} / 10
+                              </span>
+                            </div>
+                            <div className="h-1 bg-slate-800 rounded-full overflow-hidden">
+                              <div
+                                className={`h-full transition-all duration-1000 ${pred.score > 0 ? "bg-emerald-500" : "bg-rose-500"}`}
+                                style={{
+                                  width: `${Math.min(pred.confidence * 10, 100)}%`,
+                                }}
+                              ></div>
+                            </div>
                           </div>
-                        </div>
-                        <div className="mt-3 pt-2 border-t border-slate-700/50 text-[10px] text-slate-500 flex justify-between">
-                          <span>置信度</span>
-                          <span className="text-slate-300">
-                            {pred.confidence.toFixed(1)}%
-                          </span>
                         </div>
                       </div>
                     ))}
@@ -243,10 +254,10 @@
                         </div>
                         <div className="flex justify-between items-end border-t border-slate-700/30 pt-1.5 mt-1">
                           <span className="text-[10px] text-slate-500">
-                            得分
+                            预期
                           </span>
                           <span
-                            className={`text-xs font-mono ${
+                            className={`text-xs font-mono font-bold ${
                               pred.score > 0
                                 ? "text-emerald-400"
                                 : pred.score < 0
@@ -254,7 +265,8 @@
                                   : "text-slate-400"
                             }`}
                           >
-                            {pred.score.toFixed(4)}
+                            {pred.score > 0 ? "+" : ""}
+                            {(pred.score * 100).toFixed(2)}%
                           </span>
                         </div>
                       </div>
@@ -342,5 +354,6 @@
 
   const root = ReactDOM.createRoot(document.getElementById("dashboard-root"));
   root.render(<Dashboard />);
+  {% endraw %}
 </script>
 {% endblock %}
