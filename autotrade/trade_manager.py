@@ -322,6 +322,90 @@ class TradeManager:
             self.log(f"读取配置失败: {e}")
         return ["CSI300"]
 
+    def get_kline_data(self, symbol: str, days: int = 365) -> dict:
+        """
+        获取个股 K 线数据
+        
+        Args:
+            symbol: 股票代码
+            days: 获取最近多少天的数据
+        """
+        try:
+            from autotrade.data import QlibDataAdapter
+            
+            adapter = QlibDataAdapter(interval="1d", market="cn")
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=days)
+            
+            # Fetch/Load data
+            df = adapter.load_data([symbol], start_date, end_date)
+            
+            if df.empty:
+                # Try fetch from source
+                try:
+                    self.log(f"本地无 {symbol} 数据，尝试获取...")
+                    adapter.fetch_and_store([symbol], start_date, end_date, update_mode="append")
+                    df = adapter.load_data([symbol], start_date, end_date)
+                except Exception as e:
+                    self.log(f"获取数据失败: {e}")
+
+            if df.empty:
+                 return {"status": "error", "message": "No data found", "data": []}
+            
+            # Extract specific stock data
+            try:
+                stock_df = df.xs(symbol, level="symbol") if "symbol" in df.index.names else df
+            except KeyError:
+                 # fallback
+                 if "symbol" in df.columns:
+                     stock_df = df[df["symbol"] == symbol]
+                 else:
+                     stock_df = df
+            
+            # Format for ECharts: category data (dates) and values [Open, Close, Lowest, Highest, Volume]
+            stock_df = stock_df.sort_index()
+            
+            dates = stock_df.index.strftime("%Y-%m-%d").tolist()
+            # ECharts candlestick expects: [Open, Close, Low, High]
+            # Note: Ensure columns exist
+            required_cols = ["open", "close", "low", "high"]
+            if not all(col in stock_df.columns for col in required_cols):
+                 return {"status": "error", "message": "Missing necessary columns"}
+            
+            # values = [open, close, low, high, volume]
+            values = []
+            for idx, row in stock_df.iterrows():
+                vol = row.get("volume", 0)
+                values.append([
+                    float(row["open"]),
+                    float(row["close"]),
+                    float(row["low"]),
+                    float(row["high"]),
+                    float(vol)
+                ])
+            
+            # Get stock name if possible
+            stock_name = symbol
+            try:
+                name_map = adapter.provider.get_stock_names([symbol])
+                stock_name = name_map.get(symbol, symbol)
+            except:
+                pass
+            
+            return {
+                "status": "success",
+                "symbol": symbol,
+                "name": stock_name,
+                "dates": dates,
+                "values": values
+            }
+            
+        except Exception as e:
+            self.log(f"获取 K 线数据失败: {e}")
+            import traceback
+            traceback.print_exc()
+            return {"status": "error", "message": str(e)}
+
     def run_backtest(self, params: dict):
         """Run a backtest using vectorbt in a separate thread."""
 
